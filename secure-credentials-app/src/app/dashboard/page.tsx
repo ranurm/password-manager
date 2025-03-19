@@ -2,7 +2,7 @@
 
 import { useState, useEffect } from 'react';
 import { useRouter } from 'next/navigation';
-import { useCredentialStore } from '@/lib/store';
+import { useAuthStore } from '@/lib/store';
 import { copyToClipboard } from '@/lib/utils';
 import type { Credential, CredentialFormData } from '@/types';
 import CredentialForm from '@/components/CredentialForm';
@@ -10,15 +10,17 @@ import CredentialForm from '@/components/CredentialForm';
 export default function DashboardPage() {
   const router = useRouter();
   const { 
-    credentials, 
+    currentUser,
     isAuthenticated, 
-    logout, 
+    logoutUser, 
     addCredential, 
     updateCredential, 
     deleteCredential, 
-    toggleFavorite 
-  } = useCredentialStore();
+    toggleFavorite,
+    getCredentials 
+  } = useAuthStore();
   
+  const credentials = getCredentials();
   const [searchQuery, setSearchQuery] = useState('');
   const [showPassword, setShowPassword] = useState<Record<string, boolean>>({});
   const [notification, setNotification] = useState('');
@@ -103,7 +105,7 @@ export default function DashboardPage() {
   
   // Handle logout
   const handleLogout = () => {
-    logout();
+    logoutUser();
     router.push('/auth');
   };
   
@@ -118,6 +120,11 @@ export default function DashboardPage() {
         <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-4 flex justify-between items-center">
           <h1 className="text-2xl font-bold">Secure Password Manager</h1>
           <div className="flex items-center gap-4">
+            {currentUser && (
+              <span className="text-sm text-gray-600 dark:text-gray-400">
+                Logged in as <span className="font-medium">{currentUser.username}</span>
+              </span>
+            )}
             <button
               onClick={() => setShowAddCredential(true)}
               className="bg-blue-600 text-white px-4 py-2 rounded-md hover:bg-blue-700"
@@ -287,7 +294,7 @@ export default function DashboardPage() {
                     
                     <div className="flex justify-between mt-4 pt-3 border-t border-gray-200 dark:border-gray-700">
                       <div className="text-xs text-gray-500">
-                        Updated: {credential.updatedAt.toLocaleDateString()}
+                        Updated: {new Date(credential.updatedAt).toLocaleDateString()}
                       </div>
                       <div className="flex gap-2">
                         <button
