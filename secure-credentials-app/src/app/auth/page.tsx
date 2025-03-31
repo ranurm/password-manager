@@ -120,7 +120,7 @@ export default function AuthPage() {
   };
   
   // Handle password reset submission
-  const handleReset = (e: React.FormEvent) => {
+  const handleReset = async (e: React.FormEvent) => {
     e.preventDefault();
     
     if (resetData.newPassword.length < 8) {
@@ -138,7 +138,7 @@ export default function AuthPage() {
       return;
     }
     
-    const result = resetPassword(resetData);
+    const result = await resetPassword(resetData);
     
     if (!result.success) {
       setError(result.error || 'Password reset failed');
