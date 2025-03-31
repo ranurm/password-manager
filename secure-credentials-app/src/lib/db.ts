@@ -13,15 +13,25 @@ export async function connectToDatabase() {
     return { client: cachedClient, db: cachedDb };
   }
 
-  const client = await MongoClient.connect(uri, {
-    autoEncryption: {
-      bypassAutoEncryption: true
-    }
-  });
-  const db = client.db('secure-credentials');
+  try {
+    const client = await MongoClient.connect(uri, {
+      maxPoolSize: 10,
+      serverSelectionTimeoutMS: 5000,
+      socketTimeoutMS: 45000,
+    });
 
-  cachedClient = client;
-  cachedDb = db;
+    const db = client.db('secure-credentials');
 
-  return { client, db };
+    // Test the connection
+    await db.command({ ping: 1 });
+    console.log('Connected to MongoDB');
+
+    cachedClient = client;
+    cachedDb = db;
+
+    return { client, db };
+  } catch (error) {
+    console.error('MongoDB connection error:', error);
+    throw new Error('Failed to connect to database');
+  }
 }

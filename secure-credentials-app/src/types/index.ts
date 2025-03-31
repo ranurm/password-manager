@@ -21,6 +21,26 @@ export interface LoginAttempt {
   error?: string;
 }
 
+export interface Device {
+  id: string;
+  name: string;
+  publicKey: string;
+  lastUsed: Date;
+  createdAt: Date;
+  isVerified: boolean;
+  registrationCode?: string;
+}
+
+export interface AuthenticationChallenge {
+  id: string;
+  userId: string;
+  deviceId: string;
+  challenge: string;
+  createdAt: Date;
+  expiresAt: Date;
+  status: 'pending' | 'approved' | 'rejected' | 'expired';
+}
+
 export interface User {
   id: string;
   username: string;
@@ -33,6 +53,9 @@ export interface User {
   lastLoginAt?: Date;
   lastPasswordChangeAt?: Date;
   credentials: Credential[];
+  devices: Device[];
+  twoFactorEnabled: boolean;
+  backupCodes: string[];
 }
 
 export type CredentialFormData = Omit<Credential, 'id' | 'createdAt' | 'updatedAt' | 'favorite'> & {

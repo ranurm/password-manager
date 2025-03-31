@@ -10,7 +10,16 @@ type AuthTab = 'login' | 'signup' | 'reset';
 
 export default function AuthPage() {
   const router = useRouter();
-  const { isAuthenticated, loginUser, registerUser, resetPassword } = useAuthStore();
+  const { 
+    isAuthenticated, 
+    loginUser, 
+    registerUser, 
+    resetPassword,
+    twoFactorPending,
+    pendingChallengeId,
+    completeTwoFactorAuth,
+    verifyBackupCode
+  } = useAuthStore();
   const [activeTab, setActiveTab] = useState<AuthTab>('login');
   const [error, setError] = useState('');
   const [success, setSuccess] = useState('');
@@ -18,6 +27,8 @@ export default function AuthPage() {
   // Login form state
   const [loginUsername, setLoginUsername] = useState('');
   const [loginPassword, setLoginPassword] = useState('');
+  const [backupCode, setBackupCode] = useState('');
+  const [showBackupCodeForm, setShowBackupCodeForm] = useState(false);
   
   // Signup form state
   const [signupData, setSignupData] = useState<UserFormData>({
@@ -72,13 +83,60 @@ export default function AuthPage() {
   };
   
   // Handle login submission
-  const handleLogin = (e: React.FormEvent) => {
+  const handleLogin = async (e: React.FormEvent) => {
     e.preventDefault();
+    setError('');
     
-    const result = loginUser(loginUsername, loginPassword);
+    try {
+      const result = await loginUser(loginUsername, loginPassword);
+      
+      if (!result.success) {
+        setError(result.error || 'Login failed');
+        return;
+      }
+
+      if (result.requiresTwoFactor) {
+        // Wait for mobile app approval
+        const checkInterval = setInterval(() => {
+          completeTwoFactorAuth(pendingChallengeId!)
+            .then(authResult => {
+              if (authResult.success) {
+                clearInterval(checkInterval);
+                router.push('/dashboard');
+              } else if (authResult.error !== 'Authentication not approved') {
+                clearInterval(checkInterval);
+                setError(authResult.error || 'Authentication failed');
+              }
+            })
+            .catch(() => {
+              clearInterval(checkInterval);
+              setError('Authentication failed');
+            });
+        }, 2000);
+
+        // Stop checking after 5 minutes
+        setTimeout(() => {
+          clearInterval(checkInterval);
+          setError('Authentication request expired. Please try again.');
+        }, 5 * 60 * 1000);
+
+        return;
+      }
+      
+      router.push('/dashboard');
+    } catch (error) {
+      setError('Login failed');
+    }
+  };
+
+  const handleBackupCode = async (e: React.FormEvent) => {
+    e.preventDefault();
+    setError('');
+
+    const result = await verifyBackupCode(backupCode);
     
     if (!result.success) {
-      setError(result.error || 'Login failed');
+      setError(result.error || 'Invalid backup code');
       return;
     }
     
@@ -86,7 +144,7 @@ export default function AuthPage() {
   };
   
   // Handle signup submission
-  const handleSignup = (e: React.FormEvent) => {
+  const handleSignup = async (e: React.FormEvent) => {
     e.preventDefault();
     
     if (signupData.password.length < 8) {
@@ -109,14 +167,15 @@ export default function AuthPage() {
       return;
     }
     
-    const result = registerUser(signupData);
+    const result = await registerUser(signupData);
     
     if (!result.success) {
       setError(result.error || 'Registration failed');
       return;
     }
     
-    router.push('/dashboard');
+    // Redirect to device setup instead of dashboard
+    router.push('/setup-device');
   };
   
   // Handle password reset submission
@@ -209,7 +268,7 @@ export default function AuthPage() {
         )}
         
         {/* Login Form */}
-        {activeTab === 'login' && (
+        {activeTab === 'login' && !twoFactorPending && (
           <form onSubmit={handleLogin} className="mt-6 space-y-6">
             <div className="space-y-4">
               <div>
@@ -259,6 +318,67 @@ export default function AuthPage() {
                 className="text-sm text-blue-600 hover:underline dark:text-blue-400"
               >
                 Forgot your password?
+              </button>
+            </div>
+          </form>
+        )}
+
+        {/* 2FA Pending State */}
+        {activeTab === 'login' && twoFactorPending && !showBackupCodeForm && (
+          <div className="mt-6 space-y-6">
+            <div className="text-center">
+              <div className="mb-4">
+                <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-blue-500 mx-auto"></div>
+              </div>
+              <h3 className="text-lg font-medium mb-2">Waiting for Authentication</h3>
+              <p className="text-gray-600 dark:text-gray-400 mb-4">
+                Please approve the login request on your mobile device.
+              </p>
+              <button
+                type="button"
+                onClick={() => setShowBackupCodeForm(true)}
+                className="text-sm text-blue-600 hover:underline dark:text-blue-400"
+              >
+                Use backup code instead
+              </button>
+            </div>
+          </div>
+        )}
+
+        {/* Backup Code Form */}
+        {activeTab === 'login' && twoFactorPending && showBackupCodeForm && (
+          <form onSubmit={handleBackupCode} className="mt-6 space-y-6">
+            <div>
+              <label htmlFor="backup-code" className="block text-sm font-medium mb-1">
+                Backup Code
+              </label>
+              <input
+                id="backup-code"
+                type="text"
+                value={backupCode}
+                onChange={(e) => setBackupCode(e.target.value)}
+                placeholder="Enter your backup code"
+                className="w-full px-3 py-2 border border-gray-300 dark:border-gray-700 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
+                required
+              />
+            </div>
+
+            <div>
+              <button
+                type="submit"
+                className="w-full bg-blue-600 text-white py-2 px-4 rounded-md hover:bg-blue-700 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:ring-offset-2"
+              >
+                Verify Backup Code
+              </button>
+            </div>
+
+            <div className="text-center">
+              <button
+                type="button"
+                onClick={() => setShowBackupCodeForm(false)}
+                className="text-sm text-blue-600 hover:underline dark:text-blue-400"
+              >
+                Back to device authentication
               </button>
             </div>
           </form>
