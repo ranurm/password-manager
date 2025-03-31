@@ -62,6 +62,7 @@ export async function POST(request: Request) {
       { 
         $set: { 
           masterPassword: newPassword,
+          lastPasswordChangeAt: new Date(),
           updatedAt: new Date()
         }
       }
@@ -80,6 +81,7 @@ export async function POST(request: Request) {
     // Return updated user (excluding sensitive data)
     const { masterPassword, ...updatedUser } = user;
     updatedUser.masterPassword = newPassword;
+    updatedUser.lastPasswordChangeAt = new Date();
     
     return NextResponse.json({ 
       success: true, 

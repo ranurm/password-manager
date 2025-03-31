@@ -1,5 +1,6 @@
 import { NextResponse } from 'next/server';
 import { MongoClient, Db } from 'mongodb';
+import { v4 as uuidv4 } from 'uuid';
 
 if (!process.env.MONGODB_URI) {
   throw new Error('Please add your Mongo URI to .env.local');
@@ -49,6 +50,8 @@ export async function POST(request: Request) {
       securityAnswer: data.securityAnswer,
       createdAt: new Date(),
       updatedAt: new Date(),
+      lastLoginAt: new Date(),
+      lastPasswordChangeAt: new Date(),
       credentials: []
     };
     
@@ -64,7 +67,8 @@ export async function POST(request: Request) {
 export async function GET(request: Request) {
   try {
     const { db } = await connectToDatabase();
-    const collection = db.collection('users');
+    const usersCollection = db.collection('users');
+    const loginAttemptsCollection = db.collection('loginAttempts');
     const { searchParams } = new URL(request.url);
     const username = searchParams.get('username');
     
@@ -72,15 +76,61 @@ export async function GET(request: Request) {
       return NextResponse.json({ success: false, error: 'Username is required' });
     }
     
-    const user = await collection.findOne({ username });
+    const user = await usersCollection.findOne({ username });
+    
+    // Log the login attempt
+    const loginAttempt = {
+      id: uuidv4(),
+      username,
+      success: !!user,
+      timestamp: new Date(),
+      ipAddress: request.headers.get('x-forwarded-for') || request.headers.get('x-real-ip'),
+      userAgent: request.headers.get('user-agent'),
+      error: user ? undefined : 'User not found'
+    };
+    
+    await loginAttemptsCollection.insertOne(loginAttempt);
     
     if (!user) {
       return NextResponse.json({ success: false, error: 'User not found' });
     }
     
+    // Update last login time
+    await usersCollection.updateOne(
+      { id: user.id },
+      { 
+        $set: { 
+          lastLoginAt: new Date(),
+          updatedAt: new Date()
+        }
+      }
+    );
+    
+    // Update the user object with the new lastLoginAt
+    user.lastLoginAt = new Date();
+    
     return NextResponse.json({ success: true, user });
   } catch (error) {
     console.error('Login error:', error);
+    
+    // Log the failed attempt due to error
+    const { db } = await connectToDatabase();
+    const loginAttemptsCollection = db.collection('loginAttempts');
+    const { searchParams } = new URL(request.url);
+    const username = searchParams.get('username');
+    
+    if (username) {
+      await loginAttemptsCollection.insertOne({
+        id: uuidv4(),
+        username,
+        success: false,
+        timestamp: new Date(),
+        ipAddress: request.headers.get('x-forwarded-for') || request.headers.get('x-real-ip'),
+        userAgent: request.headers.get('user-agent'),
+        error: error instanceof Error ? error.message : 'Unknown error'
+      });
+    }
+    
     return NextResponse.json({ success: false, error: 'Login failed' });
   }
 } 

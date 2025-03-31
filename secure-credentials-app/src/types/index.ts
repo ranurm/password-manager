@@ -11,6 +11,16 @@ export interface Credential {
   favorite: boolean;
 }
 
+export interface LoginAttempt {
+  id: string;
+  username: string;
+  success: boolean;
+  timestamp: Date;
+  ipAddress?: string;
+  userAgent?: string;
+  error?: string;
+}
+
 export interface User {
   id: string;
   username: string;
@@ -20,6 +30,8 @@ export interface User {
   securityAnswer?: string; // This would be hashed in a real app
   createdAt: Date;
   updatedAt: Date;
+  lastLoginAt?: Date;
+  lastPasswordChangeAt?: Date;
   credentials: Credential[];
 }
 
