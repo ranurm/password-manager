@@ -9,7 +9,6 @@ import {
   TouchableOpacity,
   Keyboard,
 } from 'react-native';
-import * as LocalAuthentication from 'expo-local-authentication';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { generateDeviceKeys, signChallenge } from '~/utils/crypto';
 import { registerDevice, verifyChallenge } from '~/utils/api';
@@ -19,8 +18,7 @@ export default function AuthScreen() {
   const [loading, setLoading] = useState(false);
   const [isRegistered, setIsRegistered] = useState(false);
   const [code, setCode] = useState('');
-  const [password, setPassword] = useState('');
-  const [showPasswordInput, setShowPasswordInput] = useState(false);
+  const [isLoggedIn, setIsLoggedIn] = useState(false);
 
   useEffect(() => {
     checkDeviceRegistration();
@@ -62,28 +60,6 @@ export default function AuthScreen() {
     }
   };
 
-  const handlePasswordSubmit = async () => {
-    if (!password) {
-      Alert.alert('Error', 'Please enter your password');
-      return;
-    }
-
-    try {
-      setLoading(true);
-      Keyboard.dismiss();
-
-      // Here you would typically verify the password with your backend
-      // For now, we'll just proceed to 2FA
-      setShowPasswordInput(false);
-      Alert.alert('Success', 'Password verified. Please enter the 2FA code.');
-    } catch (error) {
-      Alert.alert('Error', 'Invalid password');
-    } finally {
-      setLoading(false);
-      setPassword('');
-    }
-  };
-
   const handleRegistration = async (registrationCode: string) => {
     try {
       const publicKey = await generateDeviceKeys();
@@ -98,7 +74,8 @@ export default function AuthScreen() {
         await AsyncStorage.setItem('deviceId', result.deviceId || '');
         await AsyncStorage.setItem('deviceName', deviceName);
         setIsRegistered(true);
-        Alert.alert('Success', 'Device registered successfully!');
+        setIsLoggedIn(true); // Automatically log in after registration
+        Alert.alert('Success', 'Device registered and logged in successfully!');
       } else {
         throw new Error(result.error || 'Registration failed');
       }
@@ -117,6 +94,7 @@ export default function AuthScreen() {
       });
 
       if (result.success) {
+        setIsLoggedIn(true);
         Alert.alert('Success', 'Authentication successful!');
         // Navigate to main app screen or perform other actions
       } else {
@@ -128,13 +106,26 @@ export default function AuthScreen() {
     }
   };
 
-  const handleSignIn = () => {
-    if (isRegistered) {
-      setShowPasswordInput(true);
-    } else {
-      Alert.alert('Error', 'Device not registered. Please register first.');
-    }
+  const handleLogout = async () => {
+    setIsLoggedIn(false);
+    setCode('');
   };
+
+  if (isLoggedIn) {
+    return (
+      <View style={styles.container}>
+        <View style={styles.contentContainer}>
+          <Text style={styles.title}>Welcome!</Text>
+          <Text style={styles.subtitle}>You are logged in</Text>
+          <TouchableOpacity
+            style={styles.button}
+            onPress={handleLogout}>
+            <Text style={styles.buttonText}>Logout</Text>
+          </TouchableOpacity>
+        </View>
+      </View>
+    );
+  }
 
   return (
     <View style={styles.container}>
@@ -171,30 +162,6 @@ export default function AuthScreen() {
                 <ActivityIndicator color="#fff" />
               ) : (
                 <Text style={styles.buttonText}>Register Device</Text>
-              )}
-            </TouchableOpacity>
-          </>
-        ) : showPasswordInput ? (
-          <>
-            <Text style={styles.title}>Sign In</Text>
-            <View style={styles.inputContainer}>
-              <Text style={styles.label}>Password</Text>
-              <TextInput
-                style={styles.input}
-                value={password}
-                onChangeText={setPassword}
-                placeholder="Enter your password"
-                secureTextEntry
-              />
-            </View>
-            <TouchableOpacity
-              style={[styles.button, loading && styles.buttonDisabled]}
-              onPress={handlePasswordSubmit}
-              disabled={loading}>
-              {loading ? (
-                <ActivityIndicator color="#fff" />
-              ) : (
-                <Text style={styles.buttonText}>Verify Password</Text>
               )}
             </TouchableOpacity>
           </>
@@ -245,6 +212,12 @@ const styles = StyleSheet.create({
     fontWeight: 'bold',
     marginBottom: 30,
     textAlign: 'center',
+  },
+  subtitle: {
+    fontSize: 18,
+    marginBottom: 20,
+    textAlign: 'center',
+    color: '#666',
   },
   inputContainer: {
     width: '100%',

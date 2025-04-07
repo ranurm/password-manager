@@ -6,15 +6,19 @@ import { generateDeviceKeyPair } from '@/lib/crypto';
 import type { Device } from '@/types';
 
 export default function DeviceManagement() {
-  const { registerDevice, getDevices, removeDevice } = useAuthStore();
+  const { registerDevice, getDevices, removeDevice, verifyDevice } = useAuthStore();
   const [devices, setDevices] = useState<Device[]>([]);
   const [twoFactorEnabled, setTwoFactorEnabled] = useState(false);
   const [newDeviceName, setNewDeviceName] = useState('');
-  const [backupCodes, setBackupCodes] = useState<string[]>([]);
-  const [showBackupCodes, setShowBackupCodes] = useState(false);
   const [registrationCode, setRegistrationCode] = useState('');
+  const [backupCodes, setBackupCodes] = useState<string[]>([]);
   const [error, setError] = useState('');
   const [success, setSuccess] = useState('');
+  const [verificationCode, setVerificationCode] = useState('');
+  const [loading, setLoading] = useState(false);
+  const [showAddDevice, setShowAddDevice] = useState(true);
+  const [successMessage, setSuccessMessage] = useState('');
+  const [publicKey, setPublicKey] = useState('');
 
   useEffect(() => {
     loadDevices();
@@ -30,79 +34,88 @@ export default function DeviceManagement() {
     e.preventDefault();
     setError('');
     setSuccess('');
-    setRegistrationCode('');
 
     if (!newDeviceName.trim()) {
-      setError('Device name is required');
+      setError('Please enter a device name');
       return;
     }
 
     try {
-      // Generate key pair first to catch any crypto API errors
-      let keyPair;
-      try {
-        keyPair = await generateDeviceKeyPair();
-      } catch (error) {
-        console.error('Failed to generate device key pair:', error);
-        setError('Failed to generate device keys. Please ensure you are using a supported browser.');
-        return;
-      }
+      setLoading(true);
+
+      // Generate device keys
+      const keyPair = await generateDeviceKeyPair();
+      setPublicKey(keyPair.publicKey);
 
       const result = await registerDevice(newDeviceName, keyPair.publicKey);
 
       if (!result.success) {
-        const errorMessage = result.error || 'Failed to register device';
-        console.error('Device registration failed:', errorMessage);
-        
-        if (errorMessage.includes('database')) {
-          setError('Unable to connect to the server. Please check your internet connection and try again.');
-        } else if (errorMessage.includes('User not found')) {
-          setError('User account not found. Please try logging out and back in.');
-        } else {
-          setError(`Device registration failed: ${errorMessage}`);
-        }
+        setError(result.error || 'Failed to register device');
         return;
       }
 
-      // Set registration code if provided
       if (result.registrationCode) {
         setRegistrationCode(result.registrationCode);
-        setSuccess('Device registration initiated. Please enter the code shown below in your mobile app.');
+        setSuccess('Device registered successfully! Please enter the verification code in your mobile app.');
+        setBackupCodes(result.backupCodes || []);
       } else {
-        setError('No registration code received. Please try again.');
-        return;
+        setError('No registration code received');
       }
-
-      // Set backup codes if provided
-      if (result.backupCodes && result.backupCodes.length > 0) {
-        setBackupCodes(result.backupCodes);
-        setShowBackupCodes(true);
-      }
-
-      setNewDeviceName('');
     } catch (error) {
       console.error('Add device error:', error);
-      setError('An unexpected error occurred. Please try again later.');
+      setError('Failed to register device');
+    } finally {
+      setLoading(false);
     }
   };
 
-  const handleRemoveDevice = async (deviceId: string) => {
-    setError('');
-    setSuccess('');
+  const handleVerifyDevice = async () => {
+    if (!verificationCode) {
+      setError('Please enter the verification code');
+      return;
+    }
 
     try {
+      setLoading(true);
+      setError('');
+
+      const result = await verifyDevice(
+        verificationCode,
+        newDeviceName,
+        publicKey
+      );
+
+      if (result.success) {
+        setVerificationCode('');
+        setNewDeviceName('');
+        setShowAddDevice(false);
+        setSuccessMessage('Device verified and logged in successfully!');
+        // The store will automatically update the login state
+        await loadDevices(); // Refresh the device list
+      } else {
+        setError(result.error || 'Failed to verify device');
+      }
+    } catch (error) {
+      setError('An error occurred while verifying the device');
+      console.error('Verify device error:', error);
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const handleContinueToMain = () => {
+    // Redirect to the main window
+    window.location.href = '/';
+  };
+
+  const handleRemoveDevice = async (deviceId: string) => {
+    try {
       const result = await removeDevice(deviceId);
-      
       if (!result.success) {
         setError(result.error || 'Failed to remove device');
         return;
       }
-
-      setSuccess('Device removed successfully');
-      loadDevices();
-
-      // Clean up the private key
-      localStorage.removeItem(`device_${deviceId}_private_key`);
+      await loadDevices();
     } catch (error) {
       console.error('Remove device error:', error);
       setError('Failed to remove device');
@@ -136,23 +149,25 @@ export default function DeviceManagement() {
         )}
 
         {/* Add New Device Form */}
-        <form onSubmit={handleAddDevice} className="mb-8">
-          <div className="flex gap-4">
-            <input
-              type="text"
-              value={newDeviceName}
-              onChange={(e) => setNewDeviceName(e.target.value)}
-              placeholder="Enter device name"
-              className="flex-1 px-3 py-2 border border-gray-300 dark:border-gray-700 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
-            />
-            <button
-              type="submit"
-              className="px-4 py-2 bg-blue-600 text-white rounded-md hover:bg-blue-700 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:ring-offset-2"
-            >
-              Add Device
-            </button>
-          </div>
-        </form>
+        {showAddDevice && (
+          <form onSubmit={handleAddDevice} className="mb-8">
+            <div className="flex gap-4">
+              <input
+                type="text"
+                value={newDeviceName}
+                onChange={(e) => setNewDeviceName(e.target.value)}
+                placeholder="Enter device name"
+                className="flex-1 px-3 py-2 border border-gray-300 dark:border-gray-700 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
+              />
+              <button
+                type="submit"
+                className="px-4 py-2 bg-blue-600 text-white rounded-md hover:bg-blue-700 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:ring-offset-2"
+              >
+                Add Device
+              </button>
+            </div>
+          </form>
+        )}
 
         {/* Registration Code Display */}
         {registrationCode && (
@@ -188,13 +203,23 @@ export default function DeviceManagement() {
                 </div>
               ))}
             </div>
-            
-            <button
-              onClick={() => setShowBackupCodes(false)}
-              className="text-sm text-blue-600 hover:underline dark:text-blue-400"
-            >
-              Hide Backup Codes
-            </button>
+          </div>
+        )}
+
+        {/* Success Message with Continue Button */}
+        {successMessage && (
+          <div className="mb-8 p-6 bg-green-50 dark:bg-green-900/30 rounded-lg border-2 border-green-500">
+            <div className="flex flex-col items-center">
+              <div className="mb-4 text-green-700 dark:text-green-400">
+                {successMessage}
+              </div>
+              <button
+                onClick={handleContinueToMain}
+                className="px-6 py-3 bg-green-600 text-white rounded-md hover:bg-green-700 focus:outline-none focus:ring-2 focus:ring-green-500 focus:ring-offset-2 transition-colors"
+              >
+                Continue to Main Window
+              </button>
+            </div>
           </div>
         )}
 

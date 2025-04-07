@@ -40,6 +40,9 @@ interface AuthStore {
   deleteCredential: (id: string) => Promise<void>;
   toggleFavorite: (id: string) => Promise<void>;
   getCredentials: () => Credential[];
+
+  // New functions
+  verifyDevice: (registrationCode: string, deviceName: string, publicKey: string) => Promise<{ success: boolean; error?: string; deviceId?: string }>;
 }
 
 // In a real app, we'd encrypt the store with the master password
@@ -367,6 +370,45 @@ export const useAuthStore = create<AuthStore>()(
         } catch (error) {
           console.error('Device registration error:', error);
           return { success: false, error: 'Failed to register device' };
+        }
+      },
+      
+      verifyDevice: async (registrationCode, deviceName, publicKey) => {
+        try {
+          const response = await fetch('/api/users/devices/verify', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+              registrationCode,
+              deviceName,
+              publicKey
+            })
+          });
+          
+          const result = await response.json();
+          if (!result.success) {
+            return { success: false, error: result.error };
+          }
+          
+          // If verification is successful, update the store with the user data
+          if (result.user) {
+            set({
+              currentUser: result.user,
+              isAuthenticated: true,
+              twoFactorPending: false,
+              pendingUserId: null,
+              pendingDeviceId: null,
+              pendingChallengeId: null
+            });
+          }
+          
+          return { 
+            success: true,
+            deviceId: result.deviceId
+          };
+        } catch (error) {
+          console.error('Device verification error:', error);
+          return { success: false, error: 'Failed to verify device' };
         }
       },
       

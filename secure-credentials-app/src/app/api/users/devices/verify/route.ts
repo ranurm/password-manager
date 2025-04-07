@@ -69,7 +69,9 @@ export async function POST(request: Request) {
           'devices.$.name': deviceName,
           'devices.$.publicKey': publicKey,
           'devices.$.lastUsed': new Date(),
-          'devices.$.registrationCode': null
+          'devices.$.registrationCode': null,
+          'lastLoginAt': new Date(),
+          'updatedAt': new Date()
         }
       }
     );
@@ -84,9 +86,20 @@ export async function POST(request: Request) {
       deviceName: deviceName
     });
 
+    // Return the user data for automatic login
+    const updatedUser = await collection.findOne({ id: user.id });
+    if (!updatedUser) {
+      console.error('Failed to fetch updated user data');
+      return NextResponse.json({ success: false, error: 'Failed to fetch user data' });
+    }
+
+    // Remove sensitive data before sending
+    const { masterPassword, securityAnswer, ...safeUserData } = updatedUser;
+
     return NextResponse.json({ 
       success: true,
-      deviceId: device.id
+      deviceId: device.id,
+      user: safeUserData
     });
   } catch (error) {
     console.error('Device verification error:', error);
