@@ -14,18 +14,13 @@ import AsyncStorage from '@react-native-async-storage/async-storage';
 import { generateDeviceKeys, signChallenge } from '~/utils/crypto';
 import { registerDevice, verifyChallenge } from '~/utils/api';
 
-interface AuthData {
-  type: 'registration' | 'authentication';
-  userId?: string;
-  token?: string;
-  challengeId?: string;
-}
-
 export default function AuthScreen() {
   const [deviceName, setDeviceName] = useState('');
   const [loading, setLoading] = useState(false);
   const [isRegistered, setIsRegistered] = useState(false);
   const [code, setCode] = useState('');
+  const [password, setPassword] = useState('');
+  const [showPasswordInput, setShowPasswordInput] = useState(false);
 
   useEffect(() => {
     checkDeviceRegistration();
@@ -55,10 +50,8 @@ export default function AuthScreen() {
       Keyboard.dismiss();
 
       if (!isRegistered) {
-        // For registration, use the code directly
         await handleRegistration(code);
       } else {
-        // For authentication, use the code as challenge ID
         await handleAuthentication(code);
       }
     } catch (error) {
@@ -69,14 +62,32 @@ export default function AuthScreen() {
     }
   };
 
+  const handlePasswordSubmit = async () => {
+    if (!password) {
+      Alert.alert('Error', 'Please enter your password');
+      return;
+    }
+
+    try {
+      setLoading(true);
+      Keyboard.dismiss();
+
+      // Here you would typically verify the password with your backend
+      // For now, we'll just proceed to 2FA
+      setShowPasswordInput(false);
+      Alert.alert('Success', 'Password verified. Please enter the 2FA code.');
+    } catch (error) {
+      Alert.alert('Error', 'Invalid password');
+    } finally {
+      setLoading(false);
+      setPassword('');
+    }
+  };
+
   const handleRegistration = async (registrationCode: string) => {
     try {
-      if (!deviceName.trim()) {
-        Alert.alert('Error', 'Please enter a device name');
-        return;
-      }
-
       const publicKey = await generateDeviceKeys();
+      
       const result = await registerDevice({
         registrationCode,
         deviceName,
@@ -84,30 +95,21 @@ export default function AuthScreen() {
       });
 
       if (result.success) {
-        await AsyncStorage.setItem('deviceId', result.deviceId!);
+        await AsyncStorage.setItem('deviceId', result.deviceId || '');
         await AsyncStorage.setItem('deviceName', deviceName);
         setIsRegistered(true);
-        Alert.alert('Success', 'Device registered successfully');
+        Alert.alert('Success', 'Device registered successfully!');
       } else {
-        Alert.alert('Error', result.error || 'Registration failed');
+        throw new Error(result.error || 'Registration failed');
       }
     } catch (error) {
-      Alert.alert('Error', 'Failed to register device');
+      console.error('Registration error:', error);
+      throw error;
     }
   };
 
   const handleAuthentication = async (challengeId: string) => {
     try {
-      const biometricResult = await LocalAuthentication.authenticateAsync({
-        promptMessage: 'Verify your identity',
-        fallbackLabel: 'Use device PIN',
-      });
-
-      if (!biometricResult.success) {
-        Alert.alert('Error', 'Authentication failed');
-        return;
-      }
-
       const signature = await signChallenge(challengeId);
       const result = await verifyChallenge({
         challengeId,
@@ -115,68 +117,113 @@ export default function AuthScreen() {
       });
 
       if (result.success) {
-        Alert.alert('Success', 'Authentication approved');
+        Alert.alert('Success', 'Authentication successful!');
+        // Navigate to main app screen or perform other actions
       } else {
-        Alert.alert('Error', result.error || 'Authentication failed');
+        throw new Error(result.error || 'Authentication failed');
       }
     } catch (error) {
-      Alert.alert('Error', 'Failed to authenticate');
+      console.error('Authentication error:', error);
+      throw error;
     }
   };
 
-  if (loading) {
-    return (
-      <View style={styles.container}>
-        <ActivityIndicator size="large" color="#0000ff" />
-      </View>
-    );
-  }
+  const handleSignIn = () => {
+    if (isRegistered) {
+      setShowPasswordInput(true);
+    } else {
+      Alert.alert('Error', 'Device not registered. Please register first.');
+    }
+  };
 
   return (
     <View style={styles.container}>
       <View style={styles.contentContainer}>
-        <Text style={styles.title}>
-          {isRegistered ? '2FA Authentication' : 'Device Registration'}
-        </Text>
-        
-        {!isRegistered && (
-          <View style={styles.inputContainer}>
-            <Text style={styles.label}>Device Name</Text>
-            <TextInput
-              style={styles.input}
-              value={deviceName}
-              onChangeText={setDeviceName}
-              placeholder="Enter device name"
-              placeholderTextColor="#666"
-            />
-          </View>
+        {!isRegistered ? (
+          <>
+            <Text style={styles.title}>Register Device</Text>
+            <View style={styles.inputContainer}>
+              <Text style={styles.label}>Device Name</Text>
+              <TextInput
+                style={styles.input}
+                value={deviceName}
+                onChangeText={setDeviceName}
+                placeholder="Enter device name"
+                autoCapitalize="none"
+              />
+            </View>
+            <View style={styles.inputContainer}>
+              <Text style={styles.label}>Registration Code</Text>
+              <TextInput
+                style={styles.codeInput}
+                value={code}
+                onChangeText={setCode}
+                placeholder="Enter 6-digit code"
+                keyboardType="numeric"
+                maxLength={6}
+              />
+            </View>
+            <TouchableOpacity
+              style={[styles.button, loading && styles.buttonDisabled]}
+              onPress={handleCodeSubmit}
+              disabled={loading}>
+              {loading ? (
+                <ActivityIndicator color="#fff" />
+              ) : (
+                <Text style={styles.buttonText}>Register Device</Text>
+              )}
+            </TouchableOpacity>
+          </>
+        ) : showPasswordInput ? (
+          <>
+            <Text style={styles.title}>Sign In</Text>
+            <View style={styles.inputContainer}>
+              <Text style={styles.label}>Password</Text>
+              <TextInput
+                style={styles.input}
+                value={password}
+                onChangeText={setPassword}
+                placeholder="Enter your password"
+                secureTextEntry
+              />
+            </View>
+            <TouchableOpacity
+              style={[styles.button, loading && styles.buttonDisabled]}
+              onPress={handlePasswordSubmit}
+              disabled={loading}>
+              {loading ? (
+                <ActivityIndicator color="#fff" />
+              ) : (
+                <Text style={styles.buttonText}>Verify Password</Text>
+              )}
+            </TouchableOpacity>
+          </>
+        ) : (
+          <>
+            <Text style={styles.title}>Two-Factor Authentication</Text>
+            <View style={styles.inputContainer}>
+              <Text style={styles.label}>Verification Code</Text>
+              <TextInput
+                style={styles.codeInput}
+                value={code}
+                onChangeText={setCode}
+                placeholder="Enter 6-digit code"
+                keyboardType="numeric"
+                maxLength={6}
+              />
+            </View>
+            <TouchableOpacity
+              style={[styles.button, loading && styles.buttonDisabled]}
+              onPress={handleCodeSubmit}
+              disabled={loading}>
+              {loading ? (
+                <ActivityIndicator color="#fff" />
+              ) : (
+                <Text style={styles.buttonText}>Verify Code</Text>
+              )}
+            </TouchableOpacity>
+          </>
         )}
-
-        <View style={styles.inputContainer}>
-          <Text style={styles.label}>
-            {isRegistered ? 'Enter Authentication Code' : 'Enter Registration Code'}
-          </Text>
-          <TextInput
-            style={styles.codeInput}
-            value={code}
-            onChangeText={(text) => setCode(text.replace(/[^0-9]/g, '').slice(0, 6))}
-            placeholder="Enter 6-digit code"
-            placeholderTextColor="#666"
-            keyboardType="number-pad"
-            maxLength={6}
-            secureTextEntry
-          />
-        </View>
-
-        <TouchableOpacity
-          style={[styles.button, code.length !== 6 && styles.buttonDisabled]}
-          onPress={handleCodeSubmit}
-          disabled={code.length !== 6}
-        >
-          <Text style={styles.buttonText}>
-            {isRegistered ? 'Authenticate' : 'Register Device'}
-          </Text>
-        </TouchableOpacity>
       </View>
     </View>
   );

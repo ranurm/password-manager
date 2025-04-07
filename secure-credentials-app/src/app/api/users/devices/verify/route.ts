@@ -14,6 +14,12 @@ export async function POST(request: Request) {
     const data = await request.json();
     const { registrationCode, deviceName, publicKey } = data;
 
+    console.log('Received verification request:', {
+      registrationCode,
+      deviceName,
+      publicKey: publicKey ? 'present' : 'missing'
+    });
+
     if (!registrationCode || !deviceName || !publicKey) {
       console.error('Missing required fields:', { registrationCode, deviceName, publicKey });
       return NextResponse.json({ success: false, error: 'Missing required fields' });
@@ -34,12 +40,22 @@ export async function POST(request: Request) {
       return NextResponse.json({ success: false, error: 'Invalid registration code' });
     }
 
+    console.log('Found user with pending device:', {
+      userId: user.id,
+      deviceCount: user.devices?.length || 0
+    });
+
     // Find the specific device
     const device = user.devices.find((d: Device) => d.registrationCode === registrationCode);
     if (!device) {
       console.error('Device not found with registration code:', registrationCode);
       return NextResponse.json({ success: false, error: 'Invalid registration code' });
     }
+
+    console.log('Found matching device:', {
+      deviceId: device.id,
+      deviceName: device.name
+    });
 
     // Update the device
     const updateResult = await collection.updateOne(
@@ -59,9 +75,14 @@ export async function POST(request: Request) {
     );
 
     if (!updateResult.acknowledged) {
-      console.error('Failed to update device');
+      console.error('Failed to update device:', updateResult);
       return NextResponse.json({ success: false, error: 'Failed to update device' });
     }
+
+    console.log('Device verification successful:', {
+      deviceId: device.id,
+      deviceName: deviceName
+    });
 
     return NextResponse.json({ 
       success: true,

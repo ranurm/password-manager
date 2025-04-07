@@ -80,9 +80,6 @@ export default function DeviceManagement() {
       }
 
       setNewDeviceName('');
-      
-      // Don't update the device list yet - wait for verification
-      // loadDevices();
     } catch (error) {
       console.error('Add device error:', error);
       setError('An unexpected error occurred. Please try again later.');

@@ -20,6 +20,11 @@ interface ApiResponse {
 
 export async function registerDevice(params: RegisterDeviceParams): Promise<ApiResponse> {
   try {
+    console.log('Attempting to register device with params:', {
+      ...params,
+      publicKey: params.publicKey ? 'present' : 'missing'
+    });
+
     const response = await fetch(`${API_URL}/users/devices/verify`, {
       method: 'POST',
       headers: {
@@ -29,10 +34,20 @@ export async function registerDevice(params: RegisterDeviceParams): Promise<ApiR
     });
 
     const data = await response.json();
+    console.log('Registration response:', data);
+
+    if (!response.ok) {
+      console.error('Registration failed with status:', response.status);
+      return { success: false, error: `Server error: ${response.status}` };
+    }
+
     return data;
   } catch (error) {
     console.error('Register device error:', error);
-    return { success: false, error: 'Network error' };
+    return { 
+      success: false, 
+      error: error instanceof Error ? error.message : 'Network error' 
+    };
   }
 }
 
