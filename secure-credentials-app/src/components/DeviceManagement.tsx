@@ -133,14 +133,27 @@ export default function DeviceManagement() {
         return;
       }
 
-      // Device is verified, complete the login
-      const verifyResult = await verifyDevice(
-        verifiedDevice.registrationCode || 'verified', // Use 'verified' as a placeholder if registrationCode is null
-        verifiedDevice.name,
-        verifiedDevice.publicKey
-      );
+      // Device is verified, complete the login using the web-specific endpoint
+      const response = await fetch('/api/users/devices/verify-web', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({
+          deviceName: verifiedDevice.name,
+          publicKey: verifiedDevice.publicKey
+        }),
+      });
+
+      const verifyResult = await response.json();
 
       if (verifyResult.success) {
+        // Update the store with the user data
+        useAuthStore.setState({
+          currentUser: verifyResult.user,
+          isAuthenticated: true
+        });
+
         setSuccessMessage('2FA device added successfully! You are now logged in.');
         setRegistrationCode('');
         setNewDeviceName('');
