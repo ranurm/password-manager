@@ -103,11 +103,6 @@ export default function DeviceManagement() {
     }
   };
 
-  const handleContinueToMain = () => {
-    // Redirect to the main window
-    window.location.href = '/';
-  };
-
   const handleRemoveDevice = async (deviceId: string) => {
     try {
       const result = await removeDevice(deviceId);
@@ -119,6 +114,46 @@ export default function DeviceManagement() {
     } catch (error) {
       console.error('Remove device error:', error);
       setError('Failed to remove device');
+    }
+  };
+
+  const handleCheckVerification = async () => {
+    try {
+      setLoading(true);
+      setError('');
+
+      // Get the current user's devices
+      const result = await getDevices();
+      
+      // Find any verified device
+      const verifiedDevice = result.devices.find(d => d.isVerified);
+      
+      if (!verifiedDevice) {
+        setError('No verified device found. Please complete the verification in your mobile app.');
+        return;
+      }
+
+      // Device is verified, complete the login
+      const verifyResult = await verifyDevice(
+        verifiedDevice.registrationCode || 'verified', // Use 'verified' as a placeholder if registrationCode is null
+        verifiedDevice.name,
+        verifiedDevice.publicKey
+      );
+
+      if (verifyResult.success) {
+        setSuccessMessage('2FA device added successfully! You are now logged in.');
+        setRegistrationCode('');
+        setNewDeviceName('');
+        setShowAddDevice(false);
+        await loadDevices();
+      } else {
+        setError(verifyResult.error || 'Failed to complete login');
+      }
+    } catch (error) {
+      console.error('Check verification error:', error);
+      setError('Failed to check device verification status');
+    } finally {
+      setLoading(false);
     }
   };
 
@@ -184,6 +219,15 @@ export default function DeviceManagement() {
               <strong>Important:</strong> You must enter this code in your mobile app before proceeding.
               The code will be shown only once and cannot be retrieved later.
             </div>
+            <div className="mt-4 flex justify-center">
+              <button
+                onClick={handleCheckVerification}
+                disabled={loading}
+                className="px-4 py-2 bg-blue-600 text-white rounded-md hover:bg-blue-700 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:ring-offset-2 disabled:opacity-50 disabled:cursor-not-allowed"
+              >
+                {loading ? 'Checking...' : 'Verify Device'}
+              </button>
+            </div>
           </div>
         )}
 
@@ -202,23 +246,6 @@ export default function DeviceManagement() {
                   {code}
                 </div>
               ))}
-            </div>
-          </div>
-        )}
-
-        {/* Success Message with Continue Button */}
-        {successMessage && (
-          <div className="mb-8 p-6 bg-green-50 dark:bg-green-900/30 rounded-lg border-2 border-green-500">
-            <div className="flex flex-col items-center">
-              <div className="mb-4 text-green-700 dark:text-green-400">
-                {successMessage}
-              </div>
-              <button
-                onClick={handleContinueToMain}
-                className="px-6 py-3 bg-green-600 text-white rounded-md hover:bg-green-700 focus:outline-none focus:ring-2 focus:ring-green-500 focus:ring-offset-2 transition-colors"
-              >
-                Continue to Main Window
-              </button>
             </div>
           </div>
         )}

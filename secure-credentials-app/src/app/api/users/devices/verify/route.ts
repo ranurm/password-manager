@@ -12,44 +12,49 @@ export async function POST(request: Request) {
 
     const collection = db.collection('users');
     const data = await request.json();
-    const { registrationCode, deviceName, publicKey } = data;
+    const { deviceName, publicKey } = data;
 
     console.log('Received verification request:', {
-      registrationCode,
       deviceName,
       publicKey: publicKey ? 'present' : 'missing'
     });
 
-    if (!registrationCode || !deviceName || !publicKey) {
-      console.error('Missing required fields:', { registrationCode, deviceName, publicKey });
+    if (!deviceName || !publicKey) {
+      console.error('Missing required fields:', { deviceName, publicKey });
       return NextResponse.json({ success: false, error: 'Missing required fields' });
     }
 
-    // Find the user with a device matching this registration code
+    // Find the user with a verified device matching the name and public key
     const user = await collection.findOne({
       'devices': { 
         $elemMatch: { 
-          registrationCode,
-          isVerified: false
+          name: deviceName,
+          publicKey: publicKey,
+          isVerified: true
         }
       }
     });
 
     if (!user) {
-      console.error('No pending device found with registration code:', registrationCode);
-      return NextResponse.json({ success: false, error: 'Invalid registration code' });
+      console.error('No verified device found with name and public key:', { deviceName, publicKey });
+      return NextResponse.json({ success: false, error: 'Device not found or not verified' });
     }
 
-    console.log('Found user with pending device:', {
+    console.log('Found user with verified device:', {
       userId: user.id,
       deviceCount: user.devices?.length || 0
     });
 
     // Find the specific device
-    const device = user.devices.find((d: Device) => d.registrationCode === registrationCode);
+    const device = user.devices.find((d: Device) => 
+      d.name === deviceName && 
+      d.publicKey === publicKey && 
+      d.isVerified === true
+    );
+
     if (!device) {
-      console.error('Device not found with registration code:', registrationCode);
-      return NextResponse.json({ success: false, error: 'Invalid registration code' });
+      console.error('Device not found with name and public key:', { deviceName, publicKey });
+      return NextResponse.json({ success: false, error: 'Device not found or not verified' });
     }
 
     console.log('Found matching device:', {
@@ -57,19 +62,16 @@ export async function POST(request: Request) {
       deviceName: device.name
     });
 
-    // Update the device
+    // Update the device's last used timestamp
     const updateResult = await collection.updateOne(
       { 
         'id': user.id,
-        'devices.registrationCode': registrationCode
+        'devices.name': deviceName,
+        'devices.publicKey': publicKey
       },
       { 
         $set: { 
-          'devices.$.isVerified': true,
-          'devices.$.name': deviceName,
-          'devices.$.publicKey': publicKey,
           'devices.$.lastUsed': new Date(),
-          'devices.$.registrationCode': null,
           'lastLoginAt': new Date(),
           'updatedAt': new Date()
         }
