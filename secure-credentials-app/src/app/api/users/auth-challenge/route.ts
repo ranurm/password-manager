@@ -1,7 +1,7 @@
 import { NextResponse } from 'next/server';
 import { v4 as uuidv4 } from 'uuid';
 import { connectToDatabase } from '@/lib/db';
-import { generateChallenge, verifyChallenge } from '@/lib/crypto';
+import { generateVerificationCode } from '@/lib/server/crypto';
 import type { AuthenticationChallenge } from '@/types';
 
 // Create a new authentication challenge
@@ -13,41 +13,66 @@ export async function POST(request: Request) {
     const data = await request.json();
     const { userId, deviceId } = data;
 
+    if (!userId || !deviceId) {
+      return NextResponse.json({ 
+        success: false, 
+        error: 'Missing required fields: userId and deviceId are required' 
+      });
+    }
+
     const user = await usersCollection.findOne({ id: userId });
     if (!user) {
-      return NextResponse.json({ success: false, error: 'User not found' });
+      return NextResponse.json({ 
+        success: false, 
+        error: 'User not found' 
+      });
     }
 
-    const device = user.devices?.find(d => d.id === deviceId);
+    const device = user.devices?.find((d: { id: string }) => d.id === deviceId);
     if (!device) {
-      return NextResponse.json({ success: false, error: 'Device not found' });
+      return NextResponse.json({ 
+        success: false, 
+        error: 'Device not found' 
+      });
     }
 
-    // Generate a new challenge
-    const challenge = generateChallenge();
+    // Generate a 6-digit verification code
+    const verificationCode = generateVerificationCode();
     const expiresAt = new Date();
-    expiresAt.setMinutes(expiresAt.getMinutes() + 5); // Challenge expires in 5 minutes
+    expiresAt.setMinutes(expiresAt.getMinutes() + 5); // Code expires in 5 minutes
 
     const authChallenge: AuthenticationChallenge = {
       id: uuidv4(),
       userId,
       deviceId,
-      challenge,
+      challenge: verificationCode,
       createdAt: new Date(),
       expiresAt,
       status: 'pending'
     };
 
-    await challengesCollection.insertOne(authChallenge);
+    try {
+      await challengesCollection.insertOne(authChallenge);
+    } catch (dbError) {
+      console.error('Database error when creating challenge:', dbError);
+      return NextResponse.json({ 
+        success: false, 
+        error: 'Failed to create challenge in database' 
+      });
+    }
 
     return NextResponse.json({ 
       success: true, 
       challengeId: authChallenge.id,
-      challenge: authChallenge.challenge
+      verificationCode: authChallenge.challenge
     });
   } catch (error) {
     console.error('Create challenge error:', error);
-    return NextResponse.json({ success: false, error: 'Failed to create challenge' });
+    return NextResponse.json({ 
+      success: false, 
+      error: 'Failed to create challenge',
+      details: error instanceof Error ? error.message : 'Unknown error'
+    });
   }
 }
 
@@ -55,10 +80,9 @@ export async function POST(request: Request) {
 export async function PUT(request: Request) {
   try {
     const { db } = await connectToDatabase();
-    const usersCollection = db.collection('users');
     const challengesCollection = db.collection('authChallenges');
     const data = await request.json();
-    const { challengeId, response } = data;
+    const { challengeId, verificationCode } = data;
 
     const challenge = await challengesCollection.findOne({ id: challengeId });
     if (!challenge) {
@@ -77,37 +101,15 @@ export async function PUT(request: Request) {
       return NextResponse.json({ success: false, error: 'Challenge has expired' });
     }
 
-    const user = await usersCollection.findOne({ id: challenge.userId });
-    if (!user) {
-      return NextResponse.json({ success: false, error: 'User not found' });
+    // Verify the code matches
+    if (challenge.challenge !== verificationCode) {
+      return NextResponse.json({ success: false, error: 'Invalid verification code' });
     }
 
-    const device = user.devices?.find(d => d.id === challenge.deviceId);
-    if (!device) {
-      return NextResponse.json({ success: false, error: 'Device not found' });
-    }
-
-    // Verify the challenge response using the device's public key
-    const isValid = await verifyChallenge(challenge.challenge, response, device.publicKey);
-    
+    // Mark the challenge as approved
     await challengesCollection.updateOne(
       { id: challengeId },
-      { $set: { status: isValid ? 'approved' : 'rejected' } }
-    );
-
-    if (!isValid) {
-      return NextResponse.json({ success: false, error: 'Invalid challenge response' });
-    }
-
-    // Update device last used timestamp
-    await usersCollection.updateOne(
-      { id: user.id, 'devices.id': device.id },
-      { 
-        $set: { 
-          'devices.$.lastUsed': new Date(),
-          updatedAt: new Date()
-        }
-      }
+      { $set: { status: 'approved' } }
     );
 
     return NextResponse.json({ success: true });

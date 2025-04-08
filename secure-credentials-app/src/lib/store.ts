@@ -1,7 +1,7 @@
 import { create } from 'zustand';
 import { persist } from 'zustand/middleware';
 import { v4 as uuidv4 } from 'uuid';
-import type { Credential, CredentialFormData, User, UserFormData, PasswordResetData, Device } from '@/types';
+import type { Credential, CredentialFormData, User, UserFormData, PasswordResetData, Device, LoginResponse } from '@/types';
 
 interface AuthStore {
   users: User[];
@@ -14,8 +14,8 @@ interface AuthStore {
   
   // User management actions
   registerUser: (data: UserFormData) => Promise<{ success: boolean; error?: string }>;
-  loginUser: (username: string, password: string) => Promise<{ success: boolean; requiresTwoFactor?: boolean; error?: string }>;
-  completeTwoFactorAuth: (challengeId: string) => Promise<{ success: boolean; error?: string }>;
+  loginUser: (username: string, password: string) => Promise<LoginResponse>;
+  completeTwoFactorAuth: (challengeId: string, verificationCode: string) => Promise<{ success: boolean; error?: string }>;
   verifyBackupCode: (code: string) => Promise<{ success: boolean; error?: string }>;
   logoutUser: () => void;
   resetPassword: (data: PasswordResetData) => Promise<{ success: boolean; error?: string }>;
@@ -144,7 +144,12 @@ export const useAuthStore = create<AuthStore>()(
               pendingChallengeId: challengeResult.challengeId
             });
             
-            return { success: true, requiresTwoFactor: true };
+            // Return the verification code to display to the user
+            return { 
+              success: true, 
+              requiresTwoFactor: true,
+              verificationCode: challengeResult.verificationCode
+            };
           }
           
           // If no 2FA, complete login immediately
@@ -252,30 +257,22 @@ export const useAuthStore = create<AuthStore>()(
         }
       },
       
-      completeTwoFactorAuth: async (challengeId) => {
+      completeTwoFactorAuth: async (challengeId, verificationCode) => {
         try {
-          const response = await fetch('/api/users/auth-challenge', {
-            method: 'GET',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ challengeId })
-          });
+          // Check if the challenge has been approved by the mobile device
+          const statusResponse = await fetch(`/api/users/auth-challenge?challengeId=${challengeId}`);
+          const statusResult = await statusResponse.json();
           
-          const result = await response.json();
-          if (!result.success) {
-            return { success: false, error: result.error };
+          if (!statusResult.success) {
+            return { success: false, error: statusResult.error };
           }
           
-          if (result.status !== 'approved') {
-            return { success: false, error: 'Authentication not approved' };
+          if (statusResult.status !== 'approved') {
+            return { success: false, error: 'Verification not yet approved by mobile device' };
           }
           
           // Get the user data
-          const { pendingUserId } = get();
-          if (!pendingUserId) {
-            return { success: false, error: 'No pending authentication' };
-          }
-          
-          const userResponse = await fetch(`/api/users/${pendingUserId}`);
+          const userResponse = await fetch(`/api/users?id=${get().pendingUserId}`);
           const userResult = await userResponse.json();
           
           if (!userResult.success) {
@@ -294,8 +291,8 @@ export const useAuthStore = create<AuthStore>()(
           
           return { success: true };
         } catch (error) {
-          console.error('2FA completion error:', error);
-          return { success: false, error: 'Failed to complete authentication' };
+          console.error('Complete 2FA error:', error);
+          return { success: false, error: 'Failed to complete two-factor authentication' };
         }
       },
       
@@ -632,7 +629,7 @@ export const useAuthStore = create<AuthStore>()(
       
       getCredentials: () => {
         const { currentUser } = get();
-        return currentUser ? currentUser.credentials : [];
+        return currentUser?.credentials || [];
       }
     }),
     {

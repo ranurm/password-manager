@@ -77,4 +77,11 @@ export type PasswordResetData = {
   securityAnswer: string;
   newPassword: string;
   confirmPassword: string;
-}; 
+};
+
+export interface LoginResponse {
+  success: boolean;
+  requiresTwoFactor?: boolean;
+  error?: string;
+  verificationCode?: string;
+} 

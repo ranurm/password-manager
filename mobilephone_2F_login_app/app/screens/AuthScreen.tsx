@@ -18,7 +18,6 @@ export default function AuthScreen() {
   const [loading, setLoading] = useState(false);
   const [isRegistered, setIsRegistered] = useState(false);
   const [code, setCode] = useState('');
-  const [isLoggedIn, setIsLoggedIn] = useState(false);
 
   useEffect(() => {
     checkDeviceRegistration();
@@ -72,10 +71,10 @@ export default function AuthScreen() {
 
       if (result.success) {
         await AsyncStorage.setItem('deviceId', result.deviceId || '');
+        await AsyncStorage.setItem('userId', result.user.id || '');
         await AsyncStorage.setItem('deviceName', deviceName);
         setIsRegistered(true);
-        setIsLoggedIn(true); // Automatically log in after registration
-        Alert.alert('Success', 'Device registered and logged in successfully!');
+        Alert.alert('Success', 'Device registered successfully!');
       } else {
         throw new Error(result.error || 'Registration failed');
       }
@@ -94,38 +93,48 @@ export default function AuthScreen() {
       });
 
       if (result.success) {
-        setIsLoggedIn(true);
-        Alert.alert('Success', 'Authentication successful!');
-        // Navigate to main app screen or perform other actions
+        Alert.alert('Success', 'Verification successful!');
+        setCode('');
       } else {
-        throw new Error(result.error || 'Authentication failed');
+        throw new Error(result.error || 'Verification failed');
       }
     } catch (error) {
       console.error('Authentication error:', error);
-      throw error;
+      Alert.alert('Error', error instanceof Error ? error.message : 'Verification failed');
     }
   };
 
-  const handleLogout = async () => {
-    setIsLoggedIn(false);
-    setCode('');
-  };
-
-  if (isLoggedIn) {
-    return (
-      <View style={styles.container}>
-        <View style={styles.contentContainer}>
-          <Text style={styles.title}>Welcome!</Text>
-          <Text style={styles.subtitle}>You are logged in</Text>
-          <TouchableOpacity
-            style={styles.button}
-            onPress={handleLogout}>
-            <Text style={styles.buttonText}>Logout</Text>
-          </TouchableOpacity>
-        </View>
-      </View>
+  const handleUnregister = async () => {
+    Alert.alert(
+      'Unregister Device',
+      'Are you sure you want to unregister this device? This action cannot be undone.',
+      [
+        {
+          text: 'Cancel',
+          style: 'cancel',
+        },
+        {
+          text: 'Unregister',
+          style: 'destructive',
+          onPress: async () => {
+            try {
+              setLoading(true);
+              await AsyncStorage.removeItem('deviceId');
+              await AsyncStorage.removeItem('deviceName');
+              setIsRegistered(false);
+              setDeviceName('');
+              setCode('');
+              Alert.alert('Success', 'Device unregistered successfully');
+            } catch (error) {
+              Alert.alert('Error', 'Failed to unregister device');
+            } finally {
+              setLoading(false);
+            }
+          },
+        },
+      ],
     );
-  }
+  };
 
   return (
     <View style={styles.container}>
@@ -177,6 +186,7 @@ export default function AuthScreen() {
                 placeholder="Enter 6-digit code"
                 keyboardType="numeric"
                 maxLength={6}
+                autoFocus
               />
             </View>
             <TouchableOpacity
@@ -188,6 +198,12 @@ export default function AuthScreen() {
               ) : (
                 <Text style={styles.buttonText}>Verify Code</Text>
               )}
+            </TouchableOpacity>
+            <TouchableOpacity
+              style={[styles.unregisterButton, loading && styles.buttonDisabled]}
+              onPress={handleUnregister}
+              disabled={loading}>
+              <Text style={styles.unregisterButtonText}>Unregister Device</Text>
             </TouchableOpacity>
           </>
         )}
@@ -212,12 +228,6 @@ const styles = StyleSheet.create({
     fontWeight: 'bold',
     marginBottom: 30,
     textAlign: 'center',
-  },
-  subtitle: {
-    fontSize: 18,
-    marginBottom: 20,
-    textAlign: 'center',
-    color: '#666',
   },
   inputContainer: {
     width: '100%',
@@ -248,19 +258,36 @@ const styles = StyleSheet.create({
     letterSpacing: 8,
   },
   button: {
-    backgroundColor: '#007AFF',
-    paddingVertical: 15,
-    paddingHorizontal: 30,
-    borderRadius: 8,
     width: '100%',
+    height: 50,
+    backgroundColor: '#007AFF',
+    borderRadius: 8,
+    alignItems: 'center',
+    justifyContent: 'center',
+    marginTop: 20,
   },
   buttonDisabled: {
-    backgroundColor: '#ccc',
+    opacity: 0.5,
   },
   buttonText: {
     color: '#fff',
-    fontSize: 18,
-    textAlign: 'center',
-    fontWeight: '600',
+    fontSize: 16,
+    fontWeight: 'bold',
+  },
+  unregisterButton: {
+    width: '100%',
+    height: 50,
+    backgroundColor: '#fff',
+    borderRadius: 8,
+    alignItems: 'center',
+    justifyContent: 'center',
+    marginTop: 12,
+    borderWidth: 1,
+    borderColor: '#FF3B30',
+  },
+  unregisterButtonText: {
+    color: '#FF3B30',
+    fontSize: 16,
+    fontWeight: 'bold',
   },
 }); 

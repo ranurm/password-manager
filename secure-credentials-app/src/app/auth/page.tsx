@@ -27,8 +27,12 @@ export default function AuthPage() {
   // Login form state
   const [loginUsername, setLoginUsername] = useState('');
   const [loginPassword, setLoginPassword] = useState('');
+  const [verificationCode, setVerificationCode] = useState('');
+  const [showVerificationForm, setShowVerificationForm] = useState(false);
+  const [pendingVerificationCode, setPendingVerificationCode] = useState('');
   const [backupCode, setBackupCode] = useState('');
   const [showBackupCodeForm, setShowBackupCodeForm] = useState(false);
+  const [loading, setLoading] = useState(false);
   
   // Signup form state
   const [signupData, setSignupData] = useState<UserFormData>({
@@ -96,36 +100,41 @@ export default function AuthPage() {
       }
 
       if (result.requiresTwoFactor) {
-        // Wait for mobile app approval
-        const checkInterval = setInterval(() => {
-          completeTwoFactorAuth(pendingChallengeId!)
-            .then(authResult => {
-              if (authResult.success) {
-                clearInterval(checkInterval);
-                router.push('/dashboard');
-              } else if (authResult.error !== 'Authentication not approved') {
-                clearInterval(checkInterval);
-                setError(authResult.error || 'Authentication failed');
-              }
-            })
-            .catch(() => {
-              clearInterval(checkInterval);
-              setError('Authentication failed');
-            });
-        }, 2000);
-
-        // Stop checking after 5 minutes
-        setTimeout(() => {
-          clearInterval(checkInterval);
-          setError('Authentication request expired. Please try again.');
-        }, 5 * 60 * 1000);
-
+        // Show the verification code form
+        setShowVerificationForm(true);
+        setPendingVerificationCode(result.verificationCode || '');
         return;
       }
       
       router.push('/dashboard');
     } catch (error) {
       setError('Login failed');
+    }
+  };
+
+  const handleVerificationCode = async (e: React.FormEvent) => {
+    e.preventDefault();
+    setError('');
+    setLoading(true);
+    
+    try {
+      if (!pendingChallengeId) {
+        setError('No pending authentication');
+        return;
+      }
+
+      const result = await completeTwoFactorAuth(pendingChallengeId, verificationCode);
+      
+      if (!result.success) {
+        setError(result.error || 'Verification failed');
+        return;
+      }
+      
+      router.push('/dashboard');
+    } catch (error) {
+      setError('Verification failed');
+    } finally {
+      setLoading(false);
     }
   };
 
@@ -211,7 +220,7 @@ export default function AuthPage() {
   };
   
   return (
-    <div className="flex min-h-screen flex-col items-center justify-center p-8">
+    <div className="min-h-screen flex items-center justify-center bg-gray-50 dark:bg-gray-900 py-12 px-4 sm:px-6 lg:px-8">
       <div className="w-full max-w-md space-y-8 p-8 bg-white dark:bg-gray-800 rounded-lg shadow">
         <div className="text-center">
           <h1 className="text-3xl font-bold">Secure Password Manager</h1>
@@ -266,124 +275,103 @@ export default function AuthPage() {
             {success}
           </div>
         )}
-        
-        {/* Login Form */}
-        {activeTab === 'login' && !twoFactorPending && (
-          <form onSubmit={handleLogin} className="mt-6 space-y-6">
-            <div className="space-y-4">
-              <div>
-                <label htmlFor="username" className="block text-sm font-medium mb-1">
-                  Username
-                </label>
-                <input
-                  id="username"
-                  type="text"
-                  value={loginUsername}
-                  onChange={(e) => setLoginUsername(e.target.value)}
-                  required
-                  className="w-full px-3 py-2 border border-gray-300 dark:border-gray-700 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
-                  placeholder="Enter your username"
-                />
+
+        {/* Login Form with Verification Code */}
+        {activeTab === 'login' && (
+          <>
+            {showVerificationForm ? (
+              <div className="mt-6 space-y-6">
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 dark:text-gray-300">
+                    Enter this code on your registered mobile device:
+                  </label>
+                  <div className="mt-1">
+                    <div className="text-center text-4xl font-bold tracking-wider text-blue-600 dark:text-blue-400 py-4">
+                      {pendingVerificationCode}
+                    </div>
+                    <p className="text-sm text-gray-500 dark:text-gray-400 text-center mt-2">
+                      Please enter this code on your registered mobile device to complete the login.
+                    </p>
+                  </div>
+                </div>
+
+                <div>
+                  <button
+                    type="button"
+                    onClick={handleVerificationCode}
+                    className="w-full flex justify-center py-2 px-4 border border-transparent rounded-md shadow-sm text-sm font-medium text-white bg-blue-600 hover:bg-blue-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-blue-500"
+                  >
+                    {loading ? (
+                      <span className="flex items-center">
+                        <svg className="animate-spin -ml-1 mr-3 h-5 w-5 text-white" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
+                          <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle>
+                          <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
+                        </svg>
+                        Waiting for mobile verification...
+                      </span>
+                    ) : (
+                      'Check Verification Status'
+                    )}
+                  </button>
+                </div>
               </div>
-              
-              <div>
-                <label htmlFor="password" className="block text-sm font-medium mb-1">
-                  Password
-                </label>
-                <input
-                  id="password"
-                  type="password"
-                  value={loginPassword}
-                  onChange={(e) => setLoginPassword(e.target.value)}
-                  required
-                  className="w-full px-3 py-2 border border-gray-300 dark:border-gray-700 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
-                  placeholder="Enter your password"
-                />
-              </div>
-            </div>
-            
-            <div>
-              <button
-                type="submit"
-                className="w-full bg-blue-600 text-white py-2 px-4 rounded-md hover:bg-blue-700 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:ring-offset-2"
-              >
-                Login
-              </button>
-            </div>
-            
-            <div className="text-center">
-              <button 
-                type="button"
-                onClick={() => setActiveTab('reset')} 
-                className="text-sm text-blue-600 hover:underline dark:text-blue-400"
-              >
-                Forgot your password?
-              </button>
-            </div>
-          </form>
+            ) : (
+              <form onSubmit={handleLogin} className="mt-6 space-y-6">
+                <div className="space-y-4">
+                  <div>
+                    <label htmlFor="username" className="block text-sm font-medium mb-1">
+                      Username
+                    </label>
+                    <input
+                      id="username"
+                      type="text"
+                      value={loginUsername}
+                      onChange={(e) => setLoginUsername(e.target.value)}
+                      required
+                      className="w-full px-3 py-2 border border-gray-300 dark:border-gray-700 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
+                      placeholder="Enter your username"
+                    />
+                  </div>
+
+                  <div>
+                    <label htmlFor="password" className="block text-sm font-medium mb-1">
+                      Password
+                    </label>
+                    <input
+                      id="password"
+                      type="password"
+                      value={loginPassword}
+                      onChange={(e) => setLoginPassword(e.target.value)}
+                      required
+                      className="w-full px-3 py-2 border border-gray-300 dark:border-gray-700 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
+                      placeholder="Enter your password"
+                    />
+                  </div>
+                </div>
+
+                <div>
+                  <button
+                    type="submit"
+                    className="w-full bg-blue-600 text-white py-2 px-4 rounded-md hover:bg-blue-700 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:ring-offset-2"
+                  >
+                    Login
+                  </button>
+                </div>
+
+                <div className="text-center">
+                  <button 
+                    type="button"
+                    onClick={() => setActiveTab('reset')} 
+                    className="text-sm text-blue-600 hover:underline dark:text-blue-400"
+                  >
+                    Forgot your password?
+                  </button>
+                </div>
+              </form>
+            )}
+          </>
         )}
 
-        {/* 2FA Pending State */}
-        {activeTab === 'login' && twoFactorPending && !showBackupCodeForm && (
-          <div className="mt-6 space-y-6">
-            <div className="text-center">
-              <div className="mb-4">
-                <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-blue-500 mx-auto"></div>
-              </div>
-              <h3 className="text-lg font-medium mb-2">Waiting for Authentication</h3>
-              <p className="text-gray-600 dark:text-gray-400 mb-4">
-                Please approve the login request on your mobile device.
-              </p>
-              <button
-                type="button"
-                onClick={() => setShowBackupCodeForm(true)}
-                className="text-sm text-blue-600 hover:underline dark:text-blue-400"
-              >
-                Use backup code instead
-              </button>
-            </div>
-          </div>
-        )}
-
-        {/* Backup Code Form */}
-        {activeTab === 'login' && twoFactorPending && showBackupCodeForm && (
-          <form onSubmit={handleBackupCode} className="mt-6 space-y-6">
-            <div>
-              <label htmlFor="backup-code" className="block text-sm font-medium mb-1">
-                Backup Code
-              </label>
-              <input
-                id="backup-code"
-                type="text"
-                value={backupCode}
-                onChange={(e) => setBackupCode(e.target.value)}
-                placeholder="Enter your backup code"
-                className="w-full px-3 py-2 border border-gray-300 dark:border-gray-700 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
-                required
-              />
-            </div>
-
-            <div>
-              <button
-                type="submit"
-                className="w-full bg-blue-600 text-white py-2 px-4 rounded-md hover:bg-blue-700 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:ring-offset-2"
-              >
-                Verify Backup Code
-              </button>
-            </div>
-
-            <div className="text-center">
-              <button
-                type="button"
-                onClick={() => setShowBackupCodeForm(false)}
-                className="text-sm text-blue-600 hover:underline dark:text-blue-400"
-              >
-                Back to device authentication
-              </button>
-            </div>
-          </form>
-        )}
-        
         {/* Signup Form */}
         {activeTab === 'signup' && (
           <form onSubmit={handleSignup} className="mt-6 space-y-6">
@@ -522,7 +510,7 @@ export default function AuthPage() {
           </form>
         )}
         
-        {/* Password Reset Form */}
+        {/* Reset Password Form */}
         {activeTab === 'reset' && (
           <form onSubmit={handleReset} className="mt-6 space-y-6">
             <div className="space-y-4">

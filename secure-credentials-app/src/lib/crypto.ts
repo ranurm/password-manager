@@ -154,4 +154,17 @@ export async function signChallenge(
     console.error('Challenge signing error:', error);
     throw error;
   }
+}
+
+// Generate a 6-digit verification code
+export function generateVerificationCode(): string {
+  const crypto = getCrypto();
+  if (!crypto) {
+    throw new Error('Crypto API is not available');
+  }
+  const array = new Uint8Array(1);
+  crypto.getRandomValues(array);
+  // Generate a number between 100000 and 999999
+  const code = 100000 + (array[0] % 900000);
+  return code.toString();
 } 

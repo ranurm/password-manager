@@ -16,6 +16,20 @@ interface ApiResponse {
   success: boolean;
   error?: string;
   deviceId?: string;
+  user?: {
+    id: string;
+    email: string;
+    username: string;
+    twoFactorEnabled: boolean;
+    devices: any[];
+    credentials: any[];
+    backupCodes: string[];
+    securityQuestion: string;
+    createdAt: string;
+    updatedAt: string;
+    lastLoginAt: string;
+    lastPasswordChangeAt: string;
+  };
 }
 
 export async function registerDevice(params: RegisterDeviceParams): Promise<ApiResponse> {
@@ -56,19 +70,28 @@ export async function verifyChallenge(params: VerifyChallengeParams): Promise<Ap
     const deviceId = await AsyncStorage.getItem('deviceId');
     const userId = await AsyncStorage.getItem('userId');
 
+    if (!deviceId || !userId) {
+      console.error('Device not registered:', { deviceId, userId });
+      return { success: false, error: 'Device not registered' };
+    }
+
     const response = await fetch(`${API_URL}/users/auth-challenge`, {
       method: 'PUT',
       headers: {
         'Content-Type': 'application/json',
       },
       body: JSON.stringify({
-        ...params,
+        challengeId: params.challengeId,
         deviceId,
         userId,
+        response: params.response,
       }),
     });
 
     const data = await response.json();
+    if (!response.ok) {
+      return { success: false, error: data.error || 'Verification failed' };
+    }
     return data;
   } catch (error) {
     console.error('Verify challenge error:', error);
