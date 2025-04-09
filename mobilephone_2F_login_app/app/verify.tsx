@@ -4,7 +4,7 @@ import { useAuthStore } from '../hooks/useAuthStore';
 import { router } from 'expo-router';
 
 // Replace with your actual server URL
-const API_URL = 'http://your-server-url:3000';
+const API_URL = 'http://192.168.56.1:3000';
 
 export default function VerifyScreen() {
   const [code, setCode] = useState('');
