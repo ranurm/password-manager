@@ -12,6 +12,8 @@ interface AuthStore {
   pendingDeviceId: string | null;
   pendingChallengeId: string | null;
   pendingPassword: string | null;
+  pendingUsername: string | null;
+  pendingEmail: string | null;
   deviceRegistrationRequired: boolean;
   isLoading: boolean;
   error: string | null;
@@ -59,6 +61,8 @@ export const useAuthStore = create<AuthStore>()(
       pendingDeviceId: null,
       pendingChallengeId: null,
       pendingPassword: null,
+      pendingUsername: null,
+      pendingEmail: null,
       deviceRegistrationRequired: true,
       isLoading: false,
       error: null,
@@ -216,7 +220,9 @@ export const useAuthStore = create<AuthStore>()(
               pendingUserId: userResult.user.id,
               pendingDeviceId: userResult.user.devices?.[0]?.id,
               pendingChallengeId: challengeResult.challengeId,
-              pendingPassword: data.newPassword
+              pendingPassword: data.newPassword,
+              pendingUsername: data.username,
+              pendingEmail: data.email
             });
             
             // Return the verification code to display to the user
@@ -303,13 +309,36 @@ export const useAuthStore = create<AuthStore>()(
           // Improved error handling for fetch
           let response;
           try {
+            // Get the current username and email for password reset
+            const pendingUserId = get().pendingUserId;
+            let username = get().pendingUsername || '';
+            let email = get().pendingEmail || '';
+            
+            // If we have a pendingUserId and this is a password reset, we need to get the user details
+            if (isPasswordReset && pendingUserId && (!username || !email)) {
+              try {
+                // Get the user information from the backend
+                const userResponse = await fetch(`/api/users?userId=${pendingUserId}`);
+                const userData = await userResponse.json();
+                if (userData.success && userData.user) {
+                  username = userData.user.username;
+                  email = userData.user.email;
+                }
+              } catch (userError) {
+                console.error('Error fetching user data for password reset:', userError);
+              }
+            }
+            
             // For login, we don't actually need to send the verification code
             // The server will check if the challenge is approved based on the mobile app action
             const requestBody = isPasswordReset 
               ? {
                   challengeId,
                   verificationCode: code,
-                  newPassword: pendingPassword
+                  newPassword: pendingPassword,
+                  // Include username and email for password reset
+                  username,
+                  email
                 } 
               : {
                   challengeId,
@@ -385,7 +414,9 @@ export const useAuthStore = create<AuthStore>()(
             pendingUserId: null,
             pendingDeviceId: null,
             pendingChallengeId: null,
-            pendingPassword: null
+            pendingPassword: null,
+            pendingUsername: null,
+            pendingEmail: null
           });
 
           return { success: true };
@@ -715,17 +746,13 @@ export const useAuthStore = create<AuthStore>()(
 
       clearStore: () => {
         set({
-          users: [],
-          currentUser: null,
-          isAuthenticated: false,
           twoFactorPending: false,
           pendingUserId: null,
           pendingDeviceId: null,
           pendingChallengeId: null,
           pendingPassword: null,
-          deviceRegistrationRequired: true,
-          isLoading: false,
-          error: null
+          pendingUsername: null,
+          pendingEmail: null
         });
       }
     }),
@@ -738,6 +765,9 @@ export const useAuthStore = create<AuthStore>()(
         pendingUserId: state.pendingUserId,
         pendingDeviceId: state.pendingDeviceId,
         pendingChallengeId: state.pendingChallengeId,
+        pendingPassword: state.pendingPassword,
+        pendingUsername: state.pendingUsername,
+        pendingEmail: state.pendingEmail,
         deviceRegistrationRequired: state.deviceRegistrationRequired,
         isLoading: state.isLoading,
         error: state.error

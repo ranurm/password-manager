@@ -28,7 +28,6 @@ export default function AuthPage() {
   // Login form state
   const [loginUsername, setLoginUsername] = useState('');
   const [loginPassword, setLoginPassword] = useState('');
-  const [verificationCode, setVerificationCode] = useState('');
   const [showVerificationForm, setShowVerificationForm] = useState(false);
   const [pendingVerificationCode, setPendingVerificationCode] = useState('');
   const [loading, setLoading] = useState(false);
@@ -122,52 +121,22 @@ export default function AuthPage() {
         return;
       }
 
-      // Different approaches for login vs password reset
-      if (activeTab === 'login') {
-        // For login, we just check the status of the challenge
-        const statusResult = await fetch(`/api/users/auth-challenge?challengeId=${pendingChallengeId}`);
-        const statusData = await statusResult.json();
+      // Check the status of the challenge for both login and password reset
+      const statusResult = await fetch(`/api/users/auth-challenge?challengeId=${pendingChallengeId}`);
+      const statusData = await statusResult.json();
+      
+      console.log("Challenge status check:", statusData);
+      
+      if (!statusData.success) {
+        setError(statusData.error || 'Failed to check verification status');
+        return;
+      }
+      
+      if (statusData.status === 'approved') {
+        // Challenge is approved, complete the authentication
+        const authResult = await completeTwoFactorAuth(pendingChallengeId, "approved");
         
-        console.log("Challenge status check:", statusData);
-        
-        if (!statusData.success) {
-          setError(statusData.error || 'Failed to check verification status');
-          return;
-        }
-        
-        if (statusData.status === 'approved') {
-          // Challenge is approved, complete the login
-          const authResult = await completeTwoFactorAuth(pendingChallengeId, "approved");
-          
-          console.log("Auth result:", authResult);
-          
-          if (!authResult.success) {
-            setError(authResult.error || 'Verification failed');
-            return;
-          }
-          
-          // Clear the verification form
-          setShowVerificationForm(false);
-          setPendingVerificationCode('');
-          
-          // User will be redirected by the useEffect
-        } else if (statusData.status === 'expired') {
-          setError('Verification code has expired. Please try again.');
-        } else {
-          setError('Verification is still pending. Please confirm on your mobile device.');
-        }
-      } else {
-        // For password reset, we need the user to enter the verification code
-        if (!verificationCode) {
-          setError('Please enter the verification code from your device');
-          setLoading(false);
-          return;
-        }
-
-        // Complete the password reset authentication
-        const authResult = await completeTwoFactorAuth(pendingChallengeId, verificationCode);
-        
-        console.log("Password reset authResult", authResult);
+        console.log("Auth result:", authResult);
         
         if (!authResult.success) {
           setError(authResult.error || 'Verification failed');
@@ -176,14 +145,20 @@ export default function AuthPage() {
         
         // Clear the verification form
         setShowVerificationForm(false);
-        setVerificationCode('');
         setPendingVerificationCode('');
         
-        // Show success message and redirect to login
-        setSuccess('Password reset successful! You can now log in with your new password.');
-        setActiveTab('login');
-        setLoginUsername(resetData.username);
-        setLoginPassword('');
+        if (activeTab === 'reset') {
+          // Show success message and redirect to login for password reset
+          setSuccess('Password reset successful! You can now log in with your new password.');
+          setActiveTab('login');
+          setLoginUsername(resetData.username);
+          setLoginPassword('');
+        }
+        // For login, user will be redirected by the useEffect
+      } else if (statusData.status === 'expired') {
+        setError('Verification code has expired. Please try again.');
+      } else {
+        setError('Verification is still pending. Please confirm on your mobile device.');
       }
     } catch (error) {
       console.error("Verification error:", error);
@@ -504,34 +479,17 @@ export default function AuthPage() {
               <div className="mt-8 space-y-8">
                 <div>
                   <label className="block text-xl font-medium text-gray-700 dark:text-gray-300">
-                    Enter verification code:
+                    Enter this code on your registered mobile device:
                   </label>
                   <div className="mt-4">
                     <div className="text-center text-6xl font-bold tracking-wider text-blue-600 dark:text-blue-400 py-6">
                       {pendingVerificationCode}
                     </div>
                     <p className="text-lg text-gray-500 dark:text-gray-400 text-center mt-4">
-                      Please enter the verification code shown on your registered mobile device
-                      to complete the password reset.
+                      Please enter this code on your registered mobile device to complete the password reset.
+                      After confirming on your mobile device, click the button below.
                     </p>
                   </div>
-                </div>
-
-                <div>
-                  <label htmlFor="reset-verification-code" className="block text-xl font-medium mb-2">
-                    Verification Code
-                  </label>
-                  <input
-                    id="reset-verification-code"
-                    type="text"
-                    value={verificationCode}
-                    onChange={(e) => setVerificationCode(e.target.value)}
-                    className="w-full px-4 py-3 text-lg border border-gray-300 dark:border-gray-700 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
-                    placeholder="Enter verification code"
-                  />
-                  <p className="mt-2 text-sm text-gray-500">
-                    Enter the code shown on your mobile device for password reset verification.
-                  </p>
                 </div>
 
                 <div className="flex space-x-6">
@@ -549,14 +507,13 @@ export default function AuthPage() {
                         Verifying...
                       </span>
                     ) : (
-                      'Verify & Reset Password'
+                      'Continue After Mobile Verification'
                     )}
                   </button>
                   <button
                     type="button"
                     onClick={() => {
                       setShowVerificationForm(false);
-                      setVerificationCode('');
                       setPendingVerificationCode('');
                       clearStore();
                     }}

@@ -1,6 +1,6 @@
 import { NextResponse } from 'next/server';
 import { connectToDatabase } from '@/lib/db';
-import crypto from 'crypto';
+import { hashPassword } from '@/lib/server/crypto';
 
 interface ResetPasswordRequest {
   username: string;
@@ -44,7 +44,17 @@ export async function POST(request: Request) {
         return NextResponse.json({ success: false, error: 'Invalid challenge' });
       }
 
-      if (challenge.verificationCode !== verificationCode) {
+      // Check if the challenge has been approved by the mobile app or if the verification code matches
+      // Special case: if the verification code is "approved", check the challenge status instead
+      if (verificationCode === "approved") {
+        // For mobile app verification, we need to check if the challenge status is approved
+        const challengeStatus = challenge.status || 'pending';
+        if (challengeStatus !== 'approved') {
+          return NextResponse.json({ success: false, error: 'Challenge not yet approved' });
+        }
+      }
+      // If not the special "approved" value, check the verification code as usual
+      else if (challenge.verificationCode !== verificationCode) {
         return NextResponse.json({ success: false, error: 'Invalid verification code' });
       }
 
@@ -59,9 +69,12 @@ export async function POST(request: Request) {
       );
     }
 
-    // Update the password
-    const hashedPassword = await crypto.subtle.digest('SHA-256', new TextEncoder().encode(newPassword));
-    const passwordHash = Buffer.from(hashedPassword).toString('hex');
+    // Update the password using the same hashing method as registration
+    // Get the salt from the user record
+    const { passwordSalt } = user;
+    
+    // Hash the new password with the existing salt
+    const { hash: passwordHash } = hashPassword(newPassword, passwordSalt);
 
     await usersCollection.updateOne(
       { id: user.id },
