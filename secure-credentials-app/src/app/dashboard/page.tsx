@@ -6,6 +6,7 @@ import { useAuthStore } from '@/lib/store';
 import { copyToClipboard } from '@/lib/utils';
 import type { Credential, CredentialFormData } from '@/types';
 import CredentialForm from '@/components/CredentialForm';
+import DeviceList from '@/components/DeviceList';
 
 export default function DashboardPage() {
   const router = useRouter();
@@ -17,7 +18,8 @@ export default function DashboardPage() {
     updateCredential, 
     deleteCredential, 
     toggleFavorite,
-    getCredentials 
+    getCredentials,
+    deviceRegistrationRequired
   } = useAuthStore();
   
   const credentials = getCredentials();
@@ -33,8 +35,14 @@ export default function DashboardPage() {
   useEffect(() => {
     if (!isAuthenticated) {
       router.push('/auth');
+      return;
     }
-  }, [isAuthenticated, router]);
+
+    if (deviceRegistrationRequired) {
+      router.push('/setup-device');
+      return;
+    }
+  }, [isAuthenticated, deviceRegistrationRequired, router]);
   
   // Get unique categories from credentials
   const categories = Array.from(
@@ -109,8 +117,8 @@ export default function DashboardPage() {
     router.push('/auth');
   };
   
-  if (!isAuthenticated) {
-    return null; // Will redirect in useEffect
+  if (!isAuthenticated || deviceRegistrationRequired) {
+    return null;
   }
   
   return (
@@ -136,6 +144,15 @@ export default function DashboardPage() {
               className="text-gray-600 dark:text-gray-400 hover:text-gray-800 dark:hover:text-gray-200"
             >
               Logout
+            </button>
+            <button
+              onClick={() => router.push('/settings')}
+              className="bg-gray-200 hover:bg-gray-300 dark:bg-gray-700 dark:hover:bg-gray-600 text-gray-800 dark:text-gray-200 px-4 py-2 rounded-lg flex items-center space-x-2"
+            >
+              <svg xmlns="http://www.w3.org/2000/svg" className="h-5 w-5" viewBox="0 0 20 20" fill="currentColor">
+                <path fillRule="evenodd" d="M11.49 3.17c-.38-1.56-2.6-1.56-2.98 0a1.532 1.532 0 01-2.286.948c-1.372-.836-2.942.734-2.106 2.106.54.886.061 2.042-.947 2.287-1.561.379-1.561 2.6 0 2.978a1.532 1.532 0 01.947 2.287c-.836 1.372.734 2.942 2.106 2.106a1.532 1.532 0 012.287.947c.379 1.561 2.6 1.561 2.978 0a1.533 1.533 0 012.287-.947c1.372.836 2.942-.734 2.106-2.106a1.533 1.533 0 01.947-2.287c1.561-.379 1.561-2.6 0-2.978a1.532 1.532 0 01-.947-2.287c.836-1.372-.734-2.942-2.106-2.106a1.532 1.532 0 01-2.287-.947zM10 13a3 3 0 100-6 3 3 0 000 6z" clipRule="evenodd" />
+              </svg>
+              <span>Settings</span>
             </button>
           </div>
         </div>

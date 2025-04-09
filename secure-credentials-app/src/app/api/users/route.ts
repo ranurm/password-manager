@@ -46,8 +46,6 @@ export async function POST(request: Request) {
       username: data.username,
       email: data.email,
       masterPassword: data.masterPassword,
-      securityQuestion: data.securityQuestion,
-      securityAnswer: data.securityAnswer,
       createdAt: new Date(),
       updatedAt: new Date(),
       lastLoginAt: new Date(),

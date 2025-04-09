@@ -45,17 +45,12 @@ export interface User {
   id: string;
   username: string;
   email: string;
-  masterPassword: string; // This would be hashed in a real app
-  securityQuestion?: string;
-  securityAnswer?: string; // This would be hashed in a real app
-  createdAt: Date;
-  updatedAt: Date;
-  lastLoginAt?: Date;
-  lastPasswordChangeAt?: Date;
-  credentials: Credential[];
-  devices: Device[];
   twoFactorEnabled: boolean;
-  backupCodes: string[];
+  devices: Device[];
+  createdAt: string;
+  updatedAt: string;
+  lastLoginAt: string;
+  lastPasswordChangeAt: string;
 }
 
 export type CredentialFormData = Omit<Credential, 'id' | 'createdAt' | 'updatedAt' | 'favorite'> & {
@@ -67,14 +62,11 @@ export type UserFormData = {
   email: string;
   password: string;
   confirmPassword: string;
-  securityQuestion?: string;
-  securityAnswer?: string;
 };
 
 export type PasswordResetData = {
   username: string;
   email: string;
-  securityAnswer: string;
   newPassword: string;
   confirmPassword: string;
 };

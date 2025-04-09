@@ -1,12 +1,14 @@
 'use client';
 
 import { useState, useEffect } from 'react';
+import { useRouter } from 'next/navigation';
 import { useAuthStore } from '@/lib/store';
 import { generateDeviceKeyPair } from '@/lib/crypto';
 import type { Device } from '@/types';
 
 export default function DeviceManagement() {
-  const { registerDevice, getDevices, removeDevice, verifyDevice } = useAuthStore();
+  const router = useRouter();
+  const { registerDevice, getDevices, removeDevice, verifyDevice, currentUser } = useAuthStore();
   const [devices, setDevices] = useState<Device[]>([]);
   const [twoFactorEnabled, setTwoFactorEnabled] = useState(false);
   const [newDeviceName, setNewDeviceName] = useState('');
@@ -23,6 +25,12 @@ export default function DeviceManagement() {
   useEffect(() => {
     loadDevices();
   }, []);
+
+  useEffect(() => {
+    if (currentUser?.devices) {
+      setDevices(currentUser.devices);
+    }
+  }, [currentUser]);
 
   const loadDevices = async () => {
     const result = await getDevices();
@@ -92,6 +100,8 @@ export default function DeviceManagement() {
         setSuccessMessage('Device verified and logged in successfully!');
         // The store will automatically update the login state
         await loadDevices(); // Refresh the device list
+        // Navigate to dashboard after successful verification
+        router.push('/dashboard');
       } else {
         setError(result.error || 'Failed to verify device');
       }
@@ -104,16 +114,23 @@ export default function DeviceManagement() {
   };
 
   const handleRemoveDevice = async (deviceId: string) => {
+    setLoading(true);
+    setError('');
+    setSuccess('');
+
     try {
       const result = await removeDevice(deviceId);
       if (!result.success) {
         setError(result.error || 'Failed to remove device');
         return;
       }
-      await loadDevices();
+
+      setSuccess('Device removed successfully');
+      setDevices(devices.filter(device => device.id !== deviceId));
     } catch (error) {
-      console.error('Remove device error:', error);
       setError('Failed to remove device');
+    } finally {
+      setLoading(false);
     }
   };
 
@@ -151,7 +168,8 @@ export default function DeviceManagement() {
         // Update the store with the user data
         useAuthStore.setState({
           currentUser: verifyResult.user,
-          isAuthenticated: true
+          isAuthenticated: true,
+          deviceRegistrationRequired: false
         });
 
         setSuccessMessage('2FA device added successfully! You are now logged in.');
@@ -159,6 +177,9 @@ export default function DeviceManagement() {
         setNewDeviceName('');
         setShowAddDevice(false);
         await loadDevices();
+        
+        // Navigate to dashboard after successful verification
+        router.push('/dashboard');
       } else {
         setError(verifyResult.error || 'Failed to complete login');
       }
@@ -244,25 +265,6 @@ export default function DeviceManagement() {
           </div>
         )}
 
-        {/* Backup Codes Display */}
-        {backupCodes.length > 0 && (
-          <div className="mb-8">
-            <h3 className="text-lg font-semibold mb-4">Backup Codes</h3>
-            <p className="text-gray-600 dark:text-gray-400 mb-4">
-              Save these backup codes in a secure place. You can use them to access your account if you lose access to your device.
-              Each code can only be used once.
-            </p>
-            
-            <div className="grid grid-cols-2 gap-4 mb-4">
-              {backupCodes.map((code, index) => (
-                <div key={index} className="p-2 bg-gray-50 dark:bg-gray-900/50 rounded font-mono text-center">
-                  {code}
-                </div>
-              ))}
-            </div>
-          </div>
-        )}
-
         {/* Device List */}
         {devices.length > 0 && (
           <div>
@@ -274,13 +276,22 @@ export default function DeviceManagement() {
                   className="flex items-center justify-between p-4 bg-gray-50 dark:bg-gray-900/50 rounded-lg"
                 >
                   <div>
-                    <h4 className="font-medium">{device.name}</h4>
+                    <button
+                      onClick={() => {
+                        setNewDeviceName(device.name);
+                        setShowAddDevice(true);
+                      }}
+                      className="font-medium text-blue-600 hover:text-blue-700 dark:text-blue-400 dark:hover:text-blue-300"
+                    >
+                      {device.name}
+                    </button>
                     <p className="text-sm text-gray-600 dark:text-gray-400">
                       Added on {new Date(device.createdAt).toLocaleDateString()}
                     </p>
                   </div>
                   <button
                     onClick={() => handleRemoveDevice(device.id)}
+                    disabled={loading}
                     className="text-red-600 hover:text-red-700 dark:text-red-400 dark:hover:text-red-300"
                   >
                     Remove

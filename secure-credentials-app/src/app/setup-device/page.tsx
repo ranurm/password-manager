@@ -7,7 +7,7 @@ import DeviceManagement from '@/components/DeviceManagement';
 
 export default function SetupDevicePage() {
   const router = useRouter();
-  const { isAuthenticated, currentUser } = useAuthStore();
+  const { isAuthenticated, currentUser, deviceRegistrationRequired } = useAuthStore();
 
   useEffect(() => {
     // If not authenticated, redirect to login
@@ -16,13 +16,19 @@ export default function SetupDevicePage() {
       return;
     }
 
+    // If device registration is not required, redirect to dashboard
+    if (!deviceRegistrationRequired) {
+      router.push('/dashboard');
+      return;
+    }
+
     // If user already has 2FA enabled, redirect to dashboard
     if (currentUser?.twoFactorEnabled) {
       router.push('/dashboard');
     }
-  }, [isAuthenticated, currentUser, router]);
+  }, [isAuthenticated, currentUser, deviceRegistrationRequired, router]);
 
-  if (!isAuthenticated || !currentUser) {
+  if (!isAuthenticated || !currentUser || !deviceRegistrationRequired) {
     return null;
   }
 

@@ -17,8 +17,10 @@ export default function AuthPage() {
     resetPassword,
     twoFactorPending,
     pendingChallengeId,
+    pendingUserId,
     completeTwoFactorAuth,
-    verifyBackupCode
+    clearStore,
+    deviceRegistrationRequired
   } = useAuthStore();
   const [activeTab, setActiveTab] = useState<AuthTab>('login');
   const [error, setError] = useState('');
@@ -30,8 +32,6 @@ export default function AuthPage() {
   const [verificationCode, setVerificationCode] = useState('');
   const [showVerificationForm, setShowVerificationForm] = useState(false);
   const [pendingVerificationCode, setPendingVerificationCode] = useState('');
-  const [backupCode, setBackupCode] = useState('');
-  const [showBackupCodeForm, setShowBackupCodeForm] = useState(false);
   const [loading, setLoading] = useState(false);
   
   // Signup form state
@@ -39,16 +39,13 @@ export default function AuthPage() {
     username: '',
     email: '',
     password: '',
-    confirmPassword: '',
-    securityQuestion: '',
-    securityAnswer: ''
+    confirmPassword: ''
   });
   
   // Reset password form state
   const [resetData, setResetData] = useState<PasswordResetData>({
     username: '',
     email: '',
-    securityAnswer: '',
     newPassword: '',
     confirmPassword: ''
   });
@@ -60,11 +57,15 @@ export default function AuthPage() {
   const strengthLabel = getPasswordStrengthLabel(passwordStrength);
   
   useEffect(() => {
-    // If already authenticated, redirect to dashboard
+    // If already authenticated, redirect to appropriate page
     if (isAuthenticated) {
-      router.push('/dashboard');
+      if (deviceRegistrationRequired) {
+        router.push('/setup-device');
+      } else {
+        router.push('/dashboard');
+      }
     }
-  }, [isAuthenticated, router]);
+  }, [isAuthenticated, deviceRegistrationRequired, router]);
   
   // Clear error when switching tabs
   useEffect(() => {
@@ -118,38 +119,40 @@ export default function AuthPage() {
     setLoading(true);
     
     try {
-      if (!pendingChallengeId) {
+      if (!pendingChallengeId || !pendingUserId) {
         setError('No pending authentication');
         return;
       }
 
-      const result = await completeTwoFactorAuth(pendingChallengeId, verificationCode);
+      // Check for a matching challenge
+      const response = await fetch(`/api/challenges?userId=${pendingUserId}&code=${verificationCode}`);
+      const result = await response.json();
       
       if (!result.success) {
         setError(result.error || 'Verification failed');
         return;
       }
+
+      // Complete the authentication
+      const authResult = await completeTwoFactorAuth(pendingChallengeId, verificationCode);
       
+      if (!authResult.success) {
+        setError(authResult.error || 'Verification failed');
+        return;
+      }
+      
+      // Clear the verification form
+      setShowVerificationForm(false);
+      setVerificationCode('');
+      setPendingVerificationCode('');
+      
+      // Navigate to dashboard
       router.push('/dashboard');
     } catch (error) {
       setError('Verification failed');
     } finally {
       setLoading(false);
     }
-  };
-
-  const handleBackupCode = async (e: React.FormEvent) => {
-    e.preventDefault();
-    setError('');
-
-    const result = await verifyBackupCode(backupCode);
-    
-    if (!result.success) {
-      setError(result.error || 'Invalid backup code');
-      return;
-    }
-    
-    router.push('/dashboard');
   };
   
   // Handle signup submission
@@ -171,11 +174,6 @@ export default function AuthPage() {
       return;
     }
     
-    if (!signupData.securityQuestion || !signupData.securityAnswer) {
-      setError('Security question and answer are required for account recovery');
-      return;
-    }
-    
     const result = await registerUser(signupData);
     
     if (!result.success) {
@@ -183,8 +181,7 @@ export default function AuthPage() {
       return;
     }
     
-    // Redirect to device setup instead of dashboard
-    router.push('/setup-device');
+    // The useEffect will handle the redirection based on deviceRegistrationRequired state
   };
   
   // Handle password reset submission
@@ -220,11 +217,11 @@ export default function AuthPage() {
   };
   
   return (
-    <div className="min-h-screen flex items-center justify-center bg-gray-50 dark:bg-gray-900 py-12 px-4 sm:px-6 lg:px-8">
-      <div className="w-full max-w-md space-y-8 p-8 bg-white dark:bg-gray-800 rounded-lg shadow">
+    <div className="min-h-screen flex items-center justify-center bg-gray-50 dark:bg-gray-900 py-16 px-4 sm:px-6 lg:px-8">
+      <div className="w-full max-w-2xl space-y-10 p-10 bg-white dark:bg-gray-800 rounded-xl shadow-lg">
         <div className="text-center">
-          <h1 className="text-3xl font-bold">Secure Password Manager</h1>
-          <p className="mt-2 text-gray-600 dark:text-gray-400">
+          <h1 className="text-5xl font-bold text-gray-900 dark:text-white">Secure Password Manager</h1>
+          <p className="mt-4 text-xl text-gray-600 dark:text-gray-400">
             Safely store and manage all your credentials
           </p>
         </div>
@@ -232,7 +229,7 @@ export default function AuthPage() {
         {/* Tabs */}
         <div className="flex border-b border-gray-200 dark:border-gray-700">
           <button
-            className={`px-4 py-2 font-medium text-sm ${
+            className={`px-6 py-3 font-medium text-lg ${
               activeTab === 'login'
                 ? 'text-blue-600 border-b-2 border-blue-600 dark:text-blue-400 dark:border-blue-400'
                 : 'text-gray-500 hover:text-gray-700 dark:text-gray-400 dark:hover:text-gray-300'
@@ -242,7 +239,7 @@ export default function AuthPage() {
             Login
           </button>
           <button
-            className={`px-4 py-2 font-medium text-sm ${
+            className={`px-6 py-3 font-medium text-lg ${
               activeTab === 'signup'
                 ? 'text-blue-600 border-b-2 border-blue-600 dark:text-blue-400 dark:border-blue-400'
                 : 'text-gray-500 hover:text-gray-700 dark:text-gray-400 dark:hover:text-gray-300'
@@ -252,7 +249,7 @@ export default function AuthPage() {
             Sign Up
           </button>
           <button
-            className={`px-4 py-2 font-medium text-sm ${
+            className={`px-6 py-3 font-medium text-lg ${
               activeTab === 'reset'
                 ? 'text-blue-600 border-b-2 border-blue-600 dark:text-blue-400 dark:border-blue-400'
                 : 'text-gray-500 hover:text-gray-700 dark:text-gray-400 dark:hover:text-gray-300'
@@ -265,13 +262,13 @@ export default function AuthPage() {
         
         {/* Error and Success Messages */}
         {error && (
-          <div className="bg-red-100 dark:bg-red-900/30 text-red-700 dark:text-red-400 p-3 rounded text-sm">
+          <div className="bg-red-100 dark:bg-red-900/30 text-red-700 dark:text-red-400 p-4 rounded-lg text-lg">
             {error}
           </div>
         )}
         
         {success && (
-          <div className="bg-green-100 dark:bg-green-900/30 text-green-700 dark:text-green-400 p-3 rounded text-sm">
+          <div className="bg-green-100 dark:bg-green-900/30 text-green-700 dark:text-green-400 p-4 rounded-lg text-lg">
             {success}
           </div>
         )}
@@ -280,30 +277,30 @@ export default function AuthPage() {
         {activeTab === 'login' && (
           <>
             {showVerificationForm ? (
-              <div className="mt-6 space-y-6">
+              <div className="mt-8 space-y-8">
                 <div>
-                  <label className="block text-sm font-medium text-gray-700 dark:text-gray-300">
+                  <label className="block text-xl font-medium text-gray-700 dark:text-gray-300">
                     Enter this code on your registered mobile device:
                   </label>
-                  <div className="mt-1">
-                    <div className="text-center text-4xl font-bold tracking-wider text-blue-600 dark:text-blue-400 py-4">
+                  <div className="mt-4">
+                    <div className="text-center text-6xl font-bold tracking-wider text-blue-600 dark:text-blue-400 py-6">
                       {pendingVerificationCode}
                     </div>
-                    <p className="text-sm text-gray-500 dark:text-gray-400 text-center mt-2">
+                    <p className="text-lg text-gray-500 dark:text-gray-400 text-center mt-4">
                       Please enter this code on your registered mobile device to complete the login.
                     </p>
                   </div>
                 </div>
 
-                <div>
+                <div className="flex space-x-6">
                   <button
                     type="button"
                     onClick={handleVerificationCode}
-                    className="w-full flex justify-center py-2 px-4 border border-transparent rounded-md shadow-sm text-sm font-medium text-white bg-blue-600 hover:bg-blue-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-blue-500"
+                    className="flex-1 justify-center py-4 px-6 border border-transparent rounded-lg shadow-sm text-lg font-medium text-white bg-blue-600 hover:bg-blue-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-blue-500"
                   >
                     {loading ? (
-                      <span className="flex items-center">
-                        <svg className="animate-spin -ml-1 mr-3 h-5 w-5 text-white" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
+                      <span className="flex items-center justify-center">
+                        <svg className="animate-spin -ml-1 mr-3 h-6 w-6 text-white" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
                           <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle>
                           <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
                         </svg>
@@ -313,38 +310,50 @@ export default function AuthPage() {
                       'Check Verification Status'
                     )}
                   </button>
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setShowVerificationForm(false);
+                      setLoginPassword('');
+                      setPendingVerificationCode('');
+                      clearStore();
+                    }}
+                    className="flex-1 justify-center py-4 px-6 border border-gray-300 rounded-lg shadow-sm text-lg font-medium text-gray-700 bg-white hover:bg-gray-50 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-gray-500"
+                  >
+                    Back
+                  </button>
                 </div>
               </div>
             ) : (
-              <form onSubmit={handleLogin} className="mt-6 space-y-6">
-                <div className="space-y-4">
+              <form onSubmit={handleLogin} className="mt-8 space-y-8">
+                <div className="space-y-6">
                   <div>
-                    <label htmlFor="username" className="block text-sm font-medium mb-1">
+                    <label htmlFor="username" className="block text-xl font-medium mb-2">
                       Username
                     </label>
                     <input
                       id="username"
+                      name="username"
                       type="text"
+                      required
+                      className="w-full px-4 py-3 text-lg border border-gray-300 dark:border-gray-700 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
                       value={loginUsername}
                       onChange={(e) => setLoginUsername(e.target.value)}
-                      required
-                      className="w-full px-3 py-2 border border-gray-300 dark:border-gray-700 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
-                      placeholder="Enter your username"
                     />
                   </div>
 
                   <div>
-                    <label htmlFor="password" className="block text-sm font-medium mb-1">
+                    <label htmlFor="password" className="block text-xl font-medium mb-2">
                       Password
                     </label>
                     <input
                       id="password"
+                      name="password"
                       type="password"
+                      required
+                      className="w-full px-4 py-3 text-lg border border-gray-300 dark:border-gray-700 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
                       value={loginPassword}
                       onChange={(e) => setLoginPassword(e.target.value)}
-                      required
-                      className="w-full px-3 py-2 border border-gray-300 dark:border-gray-700 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
-                      placeholder="Enter your password"
                     />
                   </div>
                 </div>
@@ -352,19 +361,9 @@ export default function AuthPage() {
                 <div>
                   <button
                     type="submit"
-                    className="w-full bg-blue-600 text-white py-2 px-4 rounded-md hover:bg-blue-700 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:ring-offset-2"
+                    className="w-full bg-blue-600 text-white py-4 px-6 rounded-lg text-lg font-medium hover:bg-blue-700 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:ring-offset-2"
                   >
-                    Login
-                  </button>
-                </div>
-
-                <div className="text-center">
-                  <button 
-                    type="button"
-                    onClick={() => setActiveTab('reset')} 
-                    className="text-sm text-blue-600 hover:underline dark:text-blue-400"
-                  >
-                    Forgot your password?
+                    Sign in
                   </button>
                 </div>
               </form>
@@ -374,10 +373,10 @@ export default function AuthPage() {
 
         {/* Signup Form */}
         {activeTab === 'signup' && (
-          <form onSubmit={handleSignup} className="mt-6 space-y-6">
-            <div className="space-y-4">
+          <form onSubmit={handleSignup} className="mt-8 space-y-8">
+            <div className="space-y-6">
               <div>
-                <label htmlFor="signup-username" className="block text-sm font-medium mb-1">
+                <label htmlFor="signup-username" className="block text-xl font-medium mb-2">
                   Username
                 </label>
                 <input
@@ -387,13 +386,13 @@ export default function AuthPage() {
                   value={signupData.username}
                   onChange={handleSignupChange}
                   required
-                  className="w-full px-3 py-2 border border-gray-300 dark:border-gray-700 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
+                  className="w-full px-4 py-3 text-lg border border-gray-300 dark:border-gray-700 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
                   placeholder="Choose a username"
                 />
               </div>
               
               <div>
-                <label htmlFor="signup-email" className="block text-sm font-medium mb-1">
+                <label htmlFor="signup-email" className="block text-xl font-medium mb-2">
                   Email
                 </label>
                 <input
@@ -403,13 +402,13 @@ export default function AuthPage() {
                   value={signupData.email}
                   onChange={handleSignupChange}
                   required
-                  className="w-full px-3 py-2 border border-gray-300 dark:border-gray-700 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
+                  className="w-full px-4 py-3 text-lg border border-gray-300 dark:border-gray-700 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
                   placeholder="Enter your email"
                 />
               </div>
               
               <div>
-                <label htmlFor="signup-password" className="block text-sm font-medium mb-1">
+                <label htmlFor="signup-password" className="block text-xl font-medium mb-2">
                   Password
                 </label>
                 <input
@@ -419,31 +418,13 @@ export default function AuthPage() {
                   value={signupData.password}
                   onChange={handleSignupChange}
                   required
-                  className="w-full px-3 py-2 border border-gray-300 dark:border-gray-700 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
+                  className="w-full px-4 py-3 text-lg border border-gray-300 dark:border-gray-700 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
                   placeholder="Create a strong password"
                 />
-                
-                {signupData.password && (
-                  <div className="mt-2">
-                    <div className="flex justify-between items-center">
-                      <span className="text-xs">Strength: {strengthLabel}</span>
-                    </div>
-                    <div className="h-1 w-full bg-gray-200 dark:bg-gray-700 rounded-full mt-1">
-                      <div 
-                        className={`h-full rounded-full ${
-                          passwordStrength === 0 ? 'bg-red-500 w-1/5' :
-                          passwordStrength === 1 ? 'bg-orange-500 w-2/5' :
-                          passwordStrength === 2 ? 'bg-yellow-500 w-3/5' :
-                          passwordStrength === 3 ? 'bg-lime-500 w-4/5' : 'bg-green-500 w-full'
-                        }`}
-                      />
-                    </div>
-                  </div>
-                )}
               </div>
               
               <div>
-                <label htmlFor="signup-confirm-password" className="block text-sm font-medium mb-1">
+                <label htmlFor="signup-confirm-password" className="block text-xl font-medium mb-2">
                   Confirm Password
                 </label>
                 <input
@@ -453,56 +434,16 @@ export default function AuthPage() {
                   value={signupData.confirmPassword}
                   onChange={handleSignupChange}
                   required
-                  className="w-full px-3 py-2 border border-gray-300 dark:border-gray-700 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
+                  className="w-full px-4 py-3 text-lg border border-gray-300 dark:border-gray-700 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
                   placeholder="Confirm your password"
                 />
               </div>
-              
-              <div>
-                <label htmlFor="security-question" className="block text-sm font-medium mb-1">
-                  Security Question
-                </label>
-                <select
-                  id="security-question"
-                  name="securityQuestion"
-                  value={signupData.securityQuestion}
-                  onChange={handleSignupChange}
-                  required
-                  className="w-full px-3 py-2 border border-gray-300 dark:border-gray-700 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
-                >
-                  <option value="">Select a security question</option>
-                  <option value="What was your first pet's name?">What was your first pet's name?</option>
-                  <option value="What was the name of your first school?">What was the name of your first school?</option>
-                  <option value="What is your mother's maiden name?">What is your mother's maiden name?</option>
-                  <option value="What city were you born in?">What city were you born in?</option>
-                  <option value="What was your childhood nickname?">What was your childhood nickname?</option>
-                </select>
-              </div>
-              
-              <div>
-                <label htmlFor="security-answer" className="block text-sm font-medium mb-1">
-                  Security Answer
-                </label>
-                <input
-                  id="security-answer"
-                  name="securityAnswer"
-                  type="text"
-                  value={signupData.securityAnswer}
-                  onChange={handleSignupChange}
-                  required
-                  className="w-full px-3 py-2 border border-gray-300 dark:border-gray-700 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
-                  placeholder="Your answer"
-                />
-                <p className="mt-1 text-xs text-gray-500 dark:text-gray-400">
-                  This will be used to recover your account if you forget your password.
-                </p>
-              </div>
             </div>
-            
+
             <div>
               <button
                 type="submit"
-                className="w-full bg-blue-600 text-white py-2 px-4 rounded-md hover:bg-blue-700 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:ring-offset-2"
+                className="w-full bg-blue-600 text-white py-4 px-6 rounded-lg text-lg font-medium hover:bg-blue-700 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:ring-offset-2"
               >
                 Create Account
               </button>
@@ -512,10 +453,10 @@ export default function AuthPage() {
         
         {/* Reset Password Form */}
         {activeTab === 'reset' && (
-          <form onSubmit={handleReset} className="mt-6 space-y-6">
-            <div className="space-y-4">
+          <form onSubmit={handleReset} className="mt-8 space-y-8">
+            <div className="space-y-6">
               <div>
-                <label htmlFor="reset-username" className="block text-sm font-medium mb-1">
+                <label htmlFor="reset-username" className="block text-xl font-medium mb-2">
                   Username
                 </label>
                 <input
@@ -525,13 +466,13 @@ export default function AuthPage() {
                   value={resetData.username}
                   onChange={handleResetChange}
                   required
-                  className="w-full px-3 py-2 border border-gray-300 dark:border-gray-700 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
+                  className="w-full px-4 py-3 text-lg border border-gray-300 dark:border-gray-700 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
                   placeholder="Enter your username"
                 />
               </div>
               
               <div>
-                <label htmlFor="reset-email" className="block text-sm font-medium mb-1">
+                <label htmlFor="reset-email" className="block text-xl font-medium mb-2">
                   Email
                 </label>
                 <input
@@ -541,29 +482,13 @@ export default function AuthPage() {
                   value={resetData.email}
                   onChange={handleResetChange}
                   required
-                  className="w-full px-3 py-2 border border-gray-300 dark:border-gray-700 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
+                  className="w-full px-4 py-3 text-lg border border-gray-300 dark:border-gray-700 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
                   placeholder="Enter your email"
                 />
               </div>
               
               <div>
-                <label htmlFor="reset-security-answer" className="block text-sm font-medium mb-1">
-                  Security Answer
-                </label>
-                <input
-                  id="reset-security-answer"
-                  name="securityAnswer"
-                  type="text"
-                  value={resetData.securityAnswer}
-                  onChange={handleResetChange}
-                  required
-                  className="w-full px-3 py-2 border border-gray-300 dark:border-gray-700 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
-                  placeholder="Enter your security answer"
-                />
-              </div>
-              
-              <div>
-                <label htmlFor="reset-new-password" className="block text-sm font-medium mb-1">
+                <label htmlFor="reset-new-password" className="block text-xl font-medium mb-2">
                   New Password
                 </label>
                 <input
@@ -573,31 +498,13 @@ export default function AuthPage() {
                   value={resetData.newPassword}
                   onChange={handleResetChange}
                   required
-                  className="w-full px-3 py-2 border border-gray-300 dark:border-gray-700 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
+                  className="w-full px-4 py-3 text-lg border border-gray-300 dark:border-gray-700 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
                   placeholder="Enter new password"
                 />
-                
-                {resetData.newPassword && (
-                  <div className="mt-2">
-                    <div className="flex justify-between items-center">
-                      <span className="text-xs">Strength: {strengthLabel}</span>
-                    </div>
-                    <div className="h-1 w-full bg-gray-200 dark:bg-gray-700 rounded-full mt-1">
-                      <div 
-                        className={`h-full rounded-full ${
-                          passwordStrength === 0 ? 'bg-red-500 w-1/5' :
-                          passwordStrength === 1 ? 'bg-orange-500 w-2/5' :
-                          passwordStrength === 2 ? 'bg-yellow-500 w-3/5' :
-                          passwordStrength === 3 ? 'bg-lime-500 w-4/5' : 'bg-green-500 w-full'
-                        }`}
-                      />
-                    </div>
-                  </div>
-                )}
               </div>
               
               <div>
-                <label htmlFor="reset-confirm-password" className="block text-sm font-medium mb-1">
+                <label htmlFor="reset-confirm-password" className="block text-xl font-medium mb-2">
                   Confirm New Password
                 </label>
                 <input
@@ -607,7 +514,7 @@ export default function AuthPage() {
                   value={resetData.confirmPassword}
                   onChange={handleResetChange}
                   required
-                  className="w-full px-3 py-2 border border-gray-300 dark:border-gray-700 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
+                  className="w-full px-4 py-3 text-lg border border-gray-300 dark:border-gray-700 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
                   placeholder="Confirm new password"
                 />
               </div>
@@ -616,7 +523,7 @@ export default function AuthPage() {
             <div>
               <button
                 type="submit"
-                className="w-full bg-blue-600 text-white py-2 px-4 rounded-md hover:bg-blue-700 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:ring-offset-2"
+                className="w-full bg-blue-600 text-white py-4 px-6 rounded-lg text-lg font-medium hover:bg-blue-700 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:ring-offset-2"
               >
                 Reset Password
               </button>

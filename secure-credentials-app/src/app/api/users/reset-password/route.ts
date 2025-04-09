@@ -27,7 +27,7 @@ export async function POST(request: Request) {
   try {
     const { db } = await connectToDatabase();
     const collection = db.collection('users');
-    const { username, email, securityAnswer, newPassword } = await request.json();
+    const { username, email, newPassword } = await request.json();
     
     console.log('Reset password attempt for:', { username, email });
     
@@ -42,15 +42,6 @@ export async function POST(request: Request) {
       return NextResponse.json({ 
         success: false, 
         error: 'User not found or email does not match' 
-      });
-    }
-    
-    // Verify security answer
-    if (user.securityAnswer !== securityAnswer) {
-      console.log('Incorrect security answer');
-      return NextResponse.json({ 
-        success: false, 
-        error: 'Incorrect security answer' 
       });
     }
     
@@ -88,10 +79,7 @@ export async function POST(request: Request) {
       user: updatedUser 
     });
   } catch (error) {
-    console.error('Reset password error details:', error);
-    return NextResponse.json({ 
-      success: false, 
-      error: error instanceof Error ? error.message : 'Failed to reset password' 
-    });
+    console.error('Reset password error:', error);
+    return NextResponse.json({ success: false, error: 'Password reset failed' });
   }
 } 

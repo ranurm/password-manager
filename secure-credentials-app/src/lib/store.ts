@@ -11,17 +11,16 @@ interface AuthStore {
   pendingUserId: string | null;
   pendingDeviceId: string | null;
   pendingChallengeId: string | null;
+  deviceRegistrationRequired: boolean;
   
   // User management actions
   registerUser: (data: UserFormData) => Promise<{ success: boolean; error?: string }>;
-  loginUser: (username: string, password: string) => Promise<LoginResponse>;
-  completeTwoFactorAuth: (challengeId: string, verificationCode: string) => Promise<{ success: boolean; error?: string }>;
-  verifyBackupCode: (code: string) => Promise<{ success: boolean; error?: string }>;
+  loginUser: (username: string, password: string) => Promise<{ success: boolean; error?: string; requiresTwoFactor?: boolean; verificationCode?: string }>;
+  completeTwoFactorAuth: (challengeId: string, code: string) => Promise<{ success: boolean; error?: string }>;
   logoutUser: () => void;
   resetPassword: (data: PasswordResetData) => Promise<{ success: boolean; error?: string }>;
   findUserByEmail: (email: string) => Promise<User | null>;
   findUserByUsername: (username: string) => Promise<User | null>;
-  checkSecurityAnswer: (username: string, answer: string) => Promise<boolean>;
   
   // Device management actions
   registerDevice: (deviceName: string, publicKey: string) => Promise<{ 
@@ -43,6 +42,7 @@ interface AuthStore {
 
   // New functions
   verifyDevice: (registrationCode: string, deviceName: string, publicKey: string) => Promise<{ success: boolean; error?: string; deviceId?: string }>;
+  clearStore: () => void;
 }
 
 // In a real app, we'd encrypt the store with the master password
@@ -56,9 +56,10 @@ export const useAuthStore = create<AuthStore>()(
       pendingUserId: null,
       pendingDeviceId: null,
       pendingChallengeId: null,
+      deviceRegistrationRequired: true,
       
       registerUser: async (data) => {
-        const { username, email, password, confirmPassword, securityQuestion, securityAnswer } = data;
+        const { username, email, password, confirmPassword } = data;
         
         if (password !== confirmPassword) {
           return { success: false, error: 'Passwords do not match' };
@@ -72,9 +73,7 @@ export const useAuthStore = create<AuthStore>()(
               id: uuidv4(),
               username,
               email,
-              masterPassword: password,
-              securityQuestion,
-              securityAnswer
+              masterPassword: password
             })
           });
           
@@ -86,7 +85,12 @@ export const useAuthStore = create<AuthStore>()(
           
           set({
             currentUser: result.user,
-            isAuthenticated: true
+            isAuthenticated: true,
+            deviceRegistrationRequired: true,
+            twoFactorPending: false,
+            pendingUserId: null,
+            pendingDeviceId: null,
+            pendingChallengeId: null
           });
           
           return { success: true };
@@ -98,49 +102,40 @@ export const useAuthStore = create<AuthStore>()(
       
       loginUser: async (username, password) => {
         try {
-          const response = await fetch(`/api/users?username=${encodeURIComponent(username)}`);
+          const response = await fetch('/api/users/login', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ username, password })
+          });
+
           const result = await response.json();
           
           if (!result.success) {
             return { success: false, error: result.error };
           }
-          
-          if (result.user.masterPassword !== password) {
-            return { success: false, error: 'Invalid password' };
-          }
-          
-          // If 2FA is enabled, initiate the challenge
+
+          // If 2FA is enabled, create a challenge
           if (result.user.twoFactorEnabled) {
-            // Get the user's most recently used device
-            const devices = result.user.devices || [];
-            if (devices.length === 0) {
-              return { success: false, error: 'No registered devices found' };
-            }
-            
-            const lastUsedDevice = devices.reduce((prev: Device | null, curr: Device) => 
-              (!prev || new Date(curr.lastUsed) > new Date(prev.lastUsed)) ? curr : prev
-            , null);
-            
-            // Create an authentication challenge
             const challengeResponse = await fetch('/api/users/auth-challenge', {
               method: 'POST',
               headers: { 'Content-Type': 'application/json' },
               body: JSON.stringify({
                 userId: result.user.id,
-                deviceId: lastUsedDevice?.id
+                deviceId: result.user.devices?.[0]?.id
               })
             });
-            
+
             const challengeResult = await challengeResponse.json();
+            
             if (!challengeResult.success) {
               return { success: false, error: challengeResult.error };
             }
-            
-            // Store pending authentication state
+
+            // Store the pending authentication state
             set({
               twoFactorPending: true,
               pendingUserId: result.user.id,
-              pendingDeviceId: lastUsedDevice?.id,
+              pendingDeviceId: result.user.devices?.[0]?.id,
               pendingChallengeId: challengeResult.challengeId
             });
             
@@ -177,32 +172,87 @@ export const useAuthStore = create<AuthStore>()(
       },
       
       resetPassword: async (data) => {
-        const { username, email, securityAnswer, newPassword, confirmPassword } = data;
+        const { username, email, newPassword, confirmPassword } = data;
         
         if (newPassword !== confirmPassword) {
           return { success: false, error: 'Passwords do not match' };
         }
         
         try {
-          const response = await fetch('/api/users/reset-password', {
+          // First verify the user exists
+          const userResponse = await fetch(`/api/users?username=${encodeURIComponent(username)}&email=${encodeURIComponent(email)}`);
+          const userResult = await userResponse.json();
+          
+          if (!userResult.success) {
+            return { success: false, error: userResult.error };
+          }
+          
+          // If 2FA is enabled, initiate the challenge
+          if (userResult.user.twoFactorEnabled) {
+            // Get the user's most recently used device
+            const devices = userResult.user.devices || [];
+            if (devices.length === 0) {
+              return { success: false, error: 'No registered devices found' };
+            }
+            
+            const lastUsedDevice = devices.reduce((prev: Device | null, curr: Device) => 
+              (!prev || new Date(curr.lastUsed) > new Date(prev.lastUsed)) ? curr : prev
+            , null);
+            
+            if (!lastUsedDevice) {
+              return { success: false, error: 'No registered devices found' };
+            }
+            
+            // Create an authentication challenge
+            const challengeResponse = await fetch('/api/challenges', {
+              method: 'POST',
+              headers: { 'Content-Type': 'application/json' },
+              body: JSON.stringify({
+                userId: userResult.user.id,
+                deviceName: lastUsedDevice.name
+              })
+            });
+            
+            const challengeResult = await challengeResponse.json();
+            if (!challengeResult.success) {
+              return { success: false, error: challengeResult.error };
+            }
+            
+            // Store pending authentication state
+            set({
+              twoFactorPending: true,
+              pendingUserId: userResult.user.id,
+              pendingDeviceId: lastUsedDevice.id,
+              pendingChallengeId: challengeResult.challengeId
+            });
+            
+            // Return the verification code to display to the user
+            return { 
+              success: true, 
+              requiresTwoFactor: true,
+              verificationCode: challengeResult.verificationCode
+            };
+          }
+          
+          // If no 2FA, complete password reset immediately
+          const resetResponse = await fetch('/api/users/reset-password', {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify({
               username,
               email,
-              securityAnswer,
               newPassword
             })
           });
           
-          const result = await response.json();
+          const resetResult = await resetResponse.json();
           
-          if (!result.success) {
-            return { success: false, error: result.error };
+          if (!resetResult.success) {
+            return { success: false, error: resetResult.error };
           }
           
           set({
-            currentUser: result.user,
+            currentUser: resetResult.user,
             isAuthenticated: true
           });
           
@@ -245,22 +295,10 @@ export const useAuthStore = create<AuthStore>()(
         }
       },
       
-      checkSecurityAnswer: async (username, answer) => {
-        try {
-          const response = await fetch(`/api/users/check-security-answer?username=${encodeURIComponent(username)}&answer=${encodeURIComponent(answer)}`);
-          const result = await response.json();
-          
-          return result.success;
-        } catch (error) {
-          console.error('Check security answer error:', error);
-          return false;
-        }
-      },
-      
-      completeTwoFactorAuth: async (challengeId, verificationCode) => {
+      completeTwoFactorAuth: async (challengeId, code) => {
         try {
           // Check if the challenge has been approved by the mobile device
-          const statusResponse = await fetch(`/api/users/auth-challenge?challengeId=${challengeId}`);
+          const statusResponse = await fetch(`/api/challenges?challengeId=${challengeId}&code=${code}`);
           const statusResult = await statusResponse.json();
           
           if (!statusResult.success) {
@@ -293,44 +331,6 @@ export const useAuthStore = create<AuthStore>()(
         } catch (error) {
           console.error('Complete 2FA error:', error);
           return { success: false, error: 'Failed to complete two-factor authentication' };
-        }
-      },
-      
-      verifyBackupCode: async (code) => {
-        try {
-          const { pendingUserId } = get();
-          if (!pendingUserId) {
-            return { success: false, error: 'No pending authentication' };
-          }
-          
-          const response = await fetch('/api/users/verify-backup-code', {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({
-              userId: pendingUserId,
-              code
-            })
-          });
-          
-          const result = await response.json();
-          if (!result.success) {
-            return { success: false, error: result.error };
-          }
-          
-          // Complete the login
-          set({
-            currentUser: result.user,
-            isAuthenticated: true,
-            twoFactorPending: false,
-            pendingUserId: null,
-            pendingDeviceId: null,
-            pendingChallengeId: null
-          });
-          
-          return { success: true };
-        } catch (error) {
-          console.error('Backup code verification error:', error);
-          return { success: false, error: 'Failed to verify backup code' };
         }
       },
       
@@ -395,7 +395,8 @@ export const useAuthStore = create<AuthStore>()(
               twoFactorPending: false,
               pendingUserId: null,
               pendingDeviceId: null,
-              pendingChallengeId: null
+              pendingChallengeId: null,
+              deviceRegistrationRequired: false
             });
           }
           
@@ -454,8 +455,8 @@ export const useAuthStore = create<AuthStore>()(
           set((state) => ({
             currentUser: state.currentUser ? {
               ...state.currentUser,
-              devices: state.currentUser.devices.filter(d => d.id !== deviceId),
-              twoFactorEnabled: state.currentUser.devices.length > 1
+              devices: state.currentUser.devices?.filter(d => d.id !== deviceId) || [],
+              twoFactorEnabled: (state.currentUser.devices?.length || 0) > 1
             } : null
           }));
           
@@ -630,11 +631,28 @@ export const useAuthStore = create<AuthStore>()(
       getCredentials: () => {
         const { currentUser } = get();
         return currentUser?.credentials || [];
+      },
+      
+      clearStore: () => {
+        set({
+          users: [],
+          currentUser: null,
+          isAuthenticated: false,
+          twoFactorPending: false,
+          pendingUserId: null,
+          pendingDeviceId: null,
+          pendingChallengeId: null,
+          deviceRegistrationRequired: true
+        });
       }
     }),
     {
       name: 'auth-storage',
-      // In a real app, we would add encryption here
+      partialize: (state) => ({
+        currentUser: state.currentUser,
+        isAuthenticated: state.isAuthenticated,
+        deviceRegistrationRequired: state.deviceRegistrationRequired
+      })
     }
   )
 );
