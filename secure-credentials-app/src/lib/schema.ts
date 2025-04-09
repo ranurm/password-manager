@@ -5,7 +5,9 @@ export const users = sqliteTable('users', {
   id: text('id').primaryKey(),
   username: text('username').notNull(),
   email: text('email').notNull(),
-  masterPassword: text('masterPassword').notNull(),
+  passwordHash: text('passwordHash').notNull(),
+  passwordSalt: text('passwordSalt').notNull(),
+  encryptionKeySalt: text('encryptionKeySalt').notNull(),
   twoFactorEnabled: integer('twoFactorEnabled', { mode: 'boolean' }).notNull().default(false),
   createdAt: text('createdAt').notNull().default(sql`CURRENT_TIMESTAMP`),
   updatedAt: text('updatedAt').notNull().default(sql`CURRENT_TIMESTAMP`)
@@ -23,12 +25,15 @@ export const devices = sqliteTable('devices', {
 export const credentials = sqliteTable('credentials', {
   id: text('id').primaryKey(),
   userId: text('userId').notNull().references(() => users.id),
-  name: text('name').notNull(),
+  title: text('title').notNull(),
   username: text('username').notNull(),
-  password: text('password').notNull(),
+  encryptedPassword: text('encryptedPassword').notNull(),
+  passwordIV: text('passwordIV').notNull(),
+  passwordAuthTag: text('passwordAuthTag').notNull(),
   url: text('url'),
   notes: text('notes'),
-  isFavorite: integer('isFavorite', { mode: 'boolean' }).notNull().default(false),
+  category: text('category'),
+  favorite: integer('favorite', { mode: 'boolean' }).notNull().default(false),
   createdAt: text('createdAt').notNull().default(sql`CURRENT_TIMESTAMP`),
   updatedAt: text('updatedAt').notNull().default(sql`CURRENT_TIMESTAMP`)
 });

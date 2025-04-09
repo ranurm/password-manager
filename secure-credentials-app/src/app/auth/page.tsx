@@ -124,15 +124,6 @@ export default function AuthPage() {
         return;
       }
 
-      // Check for a matching challenge
-      const response = await fetch(`/api/challenges?userId=${pendingUserId}&code=${verificationCode}`);
-      const result = await response.json();
-      
-      if (!result.success) {
-        setError(result.error || 'Verification failed');
-        return;
-      }
-
       // Complete the authentication
       const authResult = await completeTwoFactorAuth(pendingChallengeId, verificationCode);
       
@@ -146,8 +137,10 @@ export default function AuthPage() {
       setVerificationCode('');
       setPendingVerificationCode('');
       
-      // Navigate to dashboard
-      router.push('/dashboard');
+      setSuccess('Password reset successful! You can now log in with your new password.');
+      setActiveTab('login');
+      setLoginUsername(resetData.username);
+      setLoginPassword('');
     } catch (error) {
       setError('Verification failed');
     } finally {
@@ -207,6 +200,13 @@ export default function AuthPage() {
     
     if (!result.success) {
       setError(result.error || 'Password reset failed');
+      return;
+    }
+
+    if (result.requiresTwoFactor) {
+      // Show the verification code form
+      setShowVerificationForm(true);
+      setPendingVerificationCode(result.verificationCode || '');
       return;
     }
     
@@ -453,82 +453,134 @@ export default function AuthPage() {
         
         {/* Reset Password Form */}
         {activeTab === 'reset' && (
-          <form onSubmit={handleReset} className="mt-8 space-y-8">
-            <div className="space-y-6">
-              <div>
-                <label htmlFor="reset-username" className="block text-xl font-medium mb-2">
-                  Username
-                </label>
-                <input
-                  id="reset-username"
-                  name="username"
-                  type="text"
-                  value={resetData.username}
-                  onChange={handleResetChange}
-                  required
-                  className="w-full px-4 py-3 text-lg border border-gray-300 dark:border-gray-700 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
-                  placeholder="Enter your username"
-                />
+          <>
+            {showVerificationForm ? (
+              <div className="mt-8 space-y-8">
+                <div>
+                  <label className="block text-xl font-medium text-gray-700 dark:text-gray-300">
+                    Enter this code on your registered mobile device:
+                  </label>
+                  <div className="mt-4">
+                    <div className="text-center text-6xl font-bold tracking-wider text-blue-600 dark:text-blue-400 py-6">
+                      {pendingVerificationCode}
+                    </div>
+                    <p className="text-lg text-gray-500 dark:text-gray-400 text-center mt-4">
+                      Please enter this code on your registered mobile device to complete the password reset.
+                    </p>
+                  </div>
+                </div>
+
+                <div className="flex space-x-6">
+                  <button
+                    type="button"
+                    onClick={handleVerificationCode}
+                    className="flex-1 justify-center py-4 px-6 border border-transparent rounded-lg shadow-sm text-lg font-medium text-white bg-blue-600 hover:bg-blue-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-blue-500"
+                  >
+                    {loading ? (
+                      <span className="flex items-center justify-center">
+                        <svg className="animate-spin -ml-1 mr-3 h-6 w-6 text-white" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
+                          <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle>
+                          <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
+                        </svg>
+                        Waiting for mobile verification...
+                      </span>
+                    ) : (
+                      'Check Verification Status'
+                    )}
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setShowVerificationForm(false);
+                      setVerificationCode('');
+                      setPendingVerificationCode('');
+                      clearStore();
+                    }}
+                    className="flex-1 justify-center py-4 px-6 border border-gray-300 rounded-lg shadow-sm text-lg font-medium text-gray-700 bg-white hover:bg-gray-50 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-gray-500"
+                  >
+                    Back
+                  </button>
+                </div>
               </div>
-              
-              <div>
-                <label htmlFor="reset-email" className="block text-xl font-medium mb-2">
-                  Email
-                </label>
-                <input
-                  id="reset-email"
-                  name="email"
-                  type="email"
-                  value={resetData.email}
-                  onChange={handleResetChange}
-                  required
-                  className="w-full px-4 py-3 text-lg border border-gray-300 dark:border-gray-700 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
-                  placeholder="Enter your email"
-                />
-              </div>
-              
-              <div>
-                <label htmlFor="reset-new-password" className="block text-xl font-medium mb-2">
-                  New Password
-                </label>
-                <input
-                  id="reset-new-password"
-                  name="newPassword"
-                  type="password"
-                  value={resetData.newPassword}
-                  onChange={handleResetChange}
-                  required
-                  className="w-full px-4 py-3 text-lg border border-gray-300 dark:border-gray-700 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
-                  placeholder="Enter new password"
-                />
-              </div>
-              
-              <div>
-                <label htmlFor="reset-confirm-password" className="block text-xl font-medium mb-2">
-                  Confirm New Password
-                </label>
-                <input
-                  id="reset-confirm-password"
-                  name="confirmPassword"
-                  type="password"
-                  value={resetData.confirmPassword}
-                  onChange={handleResetChange}
-                  required
-                  className="w-full px-4 py-3 text-lg border border-gray-300 dark:border-gray-700 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
-                  placeholder="Confirm new password"
-                />
-              </div>
-            </div>
-            
-            <div>
-              <button
-                type="submit"
-                className="w-full bg-blue-600 text-white py-4 px-6 rounded-lg text-lg font-medium hover:bg-blue-700 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:ring-offset-2"
-              >
-                Reset Password
-              </button>
-            </div>
-          </form>
+            ) : (
+              <form onSubmit={handleReset} className="mt-8 space-y-8">
+                <div className="space-y-6">
+                  <div>
+                    <label htmlFor="reset-username" className="block text-xl font-medium mb-2">
+                      Username
+                    </label>
+                    <input
+                      id="reset-username"
+                      name="username"
+                      type="text"
+                      value={resetData.username}
+                      onChange={handleResetChange}
+                      required
+                      className="w-full px-4 py-3 text-lg border border-gray-300 dark:border-gray-700 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
+                      placeholder="Enter your username"
+                    />
+                  </div>
+                  
+                  <div>
+                    <label htmlFor="reset-email" className="block text-xl font-medium mb-2">
+                      Email
+                    </label>
+                    <input
+                      id="reset-email"
+                      name="email"
+                      type="email"
+                      value={resetData.email}
+                      onChange={handleResetChange}
+                      required
+                      className="w-full px-4 py-3 text-lg border border-gray-300 dark:border-gray-700 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
+                      placeholder="Enter your email"
+                    />
+                  </div>
+                  
+                  <div>
+                    <label htmlFor="reset-new-password" className="block text-xl font-medium mb-2">
+                      New Password
+                    </label>
+                    <input
+                      id="reset-new-password"
+                      name="newPassword"
+                      type="password"
+                      value={resetData.newPassword}
+                      onChange={handleResetChange}
+                      required
+                      className="w-full px-4 py-3 text-lg border border-gray-300 dark:border-gray-700 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
+                      placeholder="Enter new password"
+                    />
+                  </div>
+                  
+                  <div>
+                    <label htmlFor="reset-confirm-password" className="block text-xl font-medium mb-2">
+                      Confirm New Password
+                    </label>
+                    <input
+                      id="reset-confirm-password"
+                      name="confirmPassword"
+                      type="password"
+                      value={resetData.confirmPassword}
+                      onChange={handleResetChange}
+                      required
+                      className="w-full px-4 py-3 text-lg border border-gray-300 dark:border-gray-700 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
+                      placeholder="Confirm new password"
+                    />
+                  </div>
+                </div>
+                
+                <div>
+                  <button
+                    type="submit"
+                    className="w-full bg-blue-600 text-white py-4 px-6 rounded-lg text-lg font-medium hover:bg-blue-700 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:ring-offset-2"
+                  >
+                    Reset Password
+                  </button>
+                </div>
+              </form>
+            )}
+          </>
         )}
       </div>
     </div>

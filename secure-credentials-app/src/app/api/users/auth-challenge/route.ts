@@ -3,76 +3,54 @@ import { v4 as uuidv4 } from 'uuid';
 import { connectToDatabase } from '@/lib/db';
 import { generateVerificationCode } from '@/lib/server/crypto';
 import type { AuthenticationChallenge } from '@/types';
+import crypto from 'crypto';
+
+interface ChallengeRequest {
+  userId: string;
+  deviceId: string;
+  isPasswordReset?: boolean;
+}
 
 // Create a new authentication challenge
 export async function POST(request: Request) {
   try {
     const { db } = await connectToDatabase();
-    const usersCollection = db.collection('users');
-    const challengesCollection = db.collection('authChallenges');
-    const data = await request.json();
-    const { userId, deviceId } = data;
+    const collection = db.collection('challenges');
+    const data: ChallengeRequest = await request.json();
+    const { userId, deviceId, isPasswordReset } = data;
 
     if (!userId || !deviceId) {
-      return NextResponse.json({ 
-        success: false, 
-        error: 'Missing required fields: userId and deviceId are required' 
-      });
+      return NextResponse.json({ success: false, error: 'Missing required fields' });
     }
 
-    const user = await usersCollection.findOne({ id: userId });
-    if (!user) {
-      return NextResponse.json({ 
-        success: false, 
-        error: 'User not found' 
-      });
-    }
-
-    const device = user.devices?.find((d: { id: string }) => d.id === deviceId);
-    if (!device) {
-      return NextResponse.json({ 
-        success: false, 
-        error: 'Device not found' 
-      });
-    }
-
+    // Generate a unique challenge ID
+    const challengeId = crypto.randomUUID();
+    
     // Generate a 6-digit verification code
-    const verificationCode = generateVerificationCode();
-    const expiresAt = new Date();
-    expiresAt.setMinutes(expiresAt.getMinutes() + 5); // Code expires in 5 minutes
-
-    const authChallenge: AuthenticationChallenge = {
-      id: uuidv4(),
+    const verificationCode = Math.floor(100000 + Math.random() * 900000).toString();
+    
+    // Create the challenge document
+    const challenge = {
+      id: challengeId,
       userId,
       deviceId,
-      challenge: verificationCode,
+      verificationCode,
+      isPasswordReset: isPasswordReset || false,
+      status: 'pending',
       createdAt: new Date(),
-      expiresAt,
-      status: 'pending'
+      expiresAt: new Date(Date.now() + 5 * 60 * 1000) // 5 minutes
     };
 
-    try {
-      await challengesCollection.insertOne(authChallenge);
-    } catch (dbError) {
-      console.error('Database error when creating challenge:', dbError);
-      return NextResponse.json({ 
-        success: false, 
-        error: 'Failed to create challenge in database' 
-      });
-    }
+    await collection.insertOne(challenge);
 
     return NextResponse.json({ 
       success: true, 
-      challengeId: authChallenge.id,
-      verificationCode: authChallenge.challenge
+      challengeId,
+      verificationCode
     });
   } catch (error) {
     console.error('Create challenge error:', error);
-    return NextResponse.json({ 
-      success: false, 
-      error: 'Failed to create challenge',
-      details: error instanceof Error ? error.message : 'Unknown error'
-    });
+    return NextResponse.json({ success: false, error: 'Failed to create challenge' });
   }
 }
 

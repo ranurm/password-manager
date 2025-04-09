@@ -1,14 +1,13 @@
 export interface Credential {
   id: string;
-  title: string;
+  name: string;
   username: string;
   password: string;
   url?: string;
   notes?: string;
-  createdAt: Date;
-  updatedAt: Date;
-  category?: string;
   favorite: boolean;
+  createdAt: string;
+  updatedAt: string;
 }
 
 export interface LoginAttempt {
@@ -25,10 +24,8 @@ export interface Device {
   id: string;
   name: string;
   publicKey: string;
-  lastUsed: Date;
-  createdAt: Date;
   isVerified: boolean;
-  registrationCode?: string;
+  lastUsed: string;
 }
 
 export interface AuthenticationChallenge {
@@ -47,10 +44,11 @@ export interface User {
   email: string;
   twoFactorEnabled: boolean;
   devices: Device[];
+  credentials: Credential[];
   createdAt: string;
-  updatedAt: string;
   lastLoginAt: string;
   lastPasswordChangeAt: string;
+  updatedAt: string;
 }
 
 export type CredentialFormData = Omit<Credential, 'id' | 'createdAt' | 'updatedAt' | 'favorite'> & {
@@ -73,7 +71,8 @@ export type PasswordResetData = {
 
 export interface LoginResponse {
   success: boolean;
-  requiresTwoFactor?: boolean;
   error?: string;
+  requiresTwoFactor?: boolean;
   verificationCode?: string;
+  user?: User;
 } 

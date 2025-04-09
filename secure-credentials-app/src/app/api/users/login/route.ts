@@ -1,6 +1,6 @@
 import { NextResponse } from 'next/server';
 import { connectToDatabase } from '@/lib/db';
-import { generateVerificationCode } from '@/lib/server/crypto';
+import { generateVerificationCode, verifyPassword } from '@/lib/server/crypto';
 
 export async function POST(request: Request) {
   try {
@@ -19,8 +19,8 @@ export async function POST(request: Request) {
       return NextResponse.json({ success: false, error: 'User not found' });
     }
 
-    // Verify password (in a real app, you would use bcrypt or similar)
-    if (user.masterPassword !== password) {
+    // Verify password using secure hash comparison
+    if (!verifyPassword(password, user.passwordHash, user.passwordSalt)) {
       return NextResponse.json({ success: false, error: 'Invalid password' });
     }
 
@@ -45,7 +45,13 @@ export async function POST(request: Request) {
 
       return NextResponse.json({
         success: true,
-        user,
+        user: {
+          id: user.id,
+          username: user.username,
+          email: user.email,
+          twoFactorEnabled: user.twoFactorEnabled,
+          devices: user.devices
+        },
         requiresTwoFactor: true,
         verificationCode,
         challengeId: challenge.id
@@ -55,7 +61,13 @@ export async function POST(request: Request) {
     // If no 2FA, return success
     return NextResponse.json({
       success: true,
-      user
+      user: {
+        id: user.id,
+        username: user.username,
+        email: user.email,
+        twoFactorEnabled: user.twoFactorEnabled,
+        devices: user.devices
+      }
     });
   } catch (error) {
     console.error('Login error:', error);

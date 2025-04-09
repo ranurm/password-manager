@@ -1,5 +1,6 @@
 import { NextResponse } from 'next/server';
-import { MongoClient, Db } from 'mongodb';
+import { connectToDatabase } from '@/lib/db';
+import { hashPassword, generateSalt } from '@/lib/server/crypto';
 import { v4 as uuidv4 } from 'uuid';
 
 if (!process.env.MONGODB_URI) {
@@ -7,22 +8,6 @@ if (!process.env.MONGODB_URI) {
 }
 
 const uri = process.env.MONGODB_URI;
-let cachedClient: MongoClient | null = null;
-let cachedDb: Db | null = null;
-
-async function connectToDatabase() {
-  if (cachedClient && cachedDb) {
-    return { client: cachedClient, db: cachedDb };
-  }
-
-  const client = await MongoClient.connect(uri);
-  const db = client.db('secure-credentials');
-
-  cachedClient = client;
-  cachedDb = db;
-
-  return { client, db };
-}
 
 export async function POST(request: Request) {
   try {
@@ -41,11 +26,20 @@ export async function POST(request: Request) {
       });
     }
     
+    // Generate salts for password hashing and encryption key
+    const passwordSalt = generateSalt();
+    const encryptionKeySalt = generateSalt();
+    
+    // Hash the password
+    const { hash: passwordHash } = hashPassword(data.masterPassword, passwordSalt);
+    
     const newUser = {
       id: data.id,
       username: data.username,
       email: data.email,
-      masterPassword: data.masterPassword,
+      passwordHash,
+      passwordSalt,
+      encryptionKeySalt,
       createdAt: new Date(),
       updatedAt: new Date(),
       lastLoginAt: new Date(),
@@ -55,7 +49,10 @@ export async function POST(request: Request) {
     
     await collection.insertOne(newUser);
     
-    return NextResponse.json({ success: true, user: newUser });
+    // Don't send sensitive data back to client
+    const { passwordHash: _, passwordSalt: __, encryptionKeySalt: ___, ...safeUser } = newUser;
+    
+    return NextResponse.json({ success: true, user: safeUser });
   } catch (error) {
     console.error('Registration error:', error);
     return NextResponse.json({ success: false, error: 'Registration failed' });

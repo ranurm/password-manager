@@ -8,7 +8,6 @@ import { Document, WithId } from 'mongodb';
 interface UserDocument extends WithId<Document> {
   id: string;
   devices?: Device[];
-  backupCodes?: string[];
   twoFactorEnabled?: boolean;
   updatedAt?: Date;
 }
@@ -16,19 +15,6 @@ interface UserDocument extends WithId<Document> {
 function generateRegistrationCode(): string {
   // Generate a 6-digit code
   return Math.floor(100000 + Math.random() * 900000).toString();
-}
-
-// Server-side implementation of backup code generation
-function generateBackupCodes(count = 8): string[] {
-  const codes: string[] = [];
-  for (let i = 0; i < count; i++) {
-    // Generate 4 bytes of random data and convert to hex
-    const randomBytes = crypto.randomBytes(4);
-    const code = randomBytes.toString('hex').toUpperCase();
-    // Format as 8-character code with a dash in the middle
-    codes.push(`${code.slice(0, 4)}-${code.slice(4, 8)}`);
-  }
-  return codes;
 }
 
 // Register a new device
@@ -67,18 +53,11 @@ export async function POST(request: Request) {
       registrationCode
     };
 
-    // If this is the first device, generate backup codes
-    let backupCodes = user.backupCodes || [];
-    if (!user.devices || user.devices.length === 0) {
-      backupCodes = generateBackupCodes();
-    }
-
     const updateResult = await collection.updateOne(
       { id: userId },
       { 
         $push: { 'devices': newDevice } as any,
         $set: { 
-          backupCodes,
           twoFactorEnabled: true,
           updatedAt: new Date()
         }
@@ -93,15 +72,11 @@ export async function POST(request: Request) {
     return NextResponse.json({ 
       success: true, 
       device: newDevice,
-      registrationCode,
-      backupCodes: !user.devices || user.devices.length === 0 ? backupCodes : undefined
+      registrationCode
     });
   } catch (error) {
     console.error('Device registration error:', error);
-    return NextResponse.json({ 
-      success: false, 
-      error: error instanceof Error ? error.message : 'Device registration failed'
-    });
+    return NextResponse.json({ success: false, error: 'Failed to register device' });
   }
 }
 
