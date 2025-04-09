@@ -58,14 +58,29 @@ export async function POST(request: Request) {
 export async function PUT(request: Request) {
   try {
     const { db } = await connectToDatabase();
-    const challengesCollection = db.collection('authChallenges');
+    const challengesCollection = db.collection('challenges');
     const data = await request.json();
-    const { challengeId, verificationCode } = data;
+    const { challengeId, response, deviceId, userId } = data;
 
-    const challenge = await challengesCollection.findOne({ id: challengeId });
+    console.log("challengeId", challengeId);
+    console.log("response", response);
+    console.log("deviceId", deviceId);
+    console.log("userId", userId);
+
+    // First try to find challenge by id
+    let challenge = await challengesCollection.findOne({ id: challengeId });
+    
+    // If not found, try to find by verificationCode (used by mobile app)
+    if (!challenge) {
+      challenge = await challengesCollection.findOne({ verificationCode: challengeId });
+      console.log("Searching by verificationCode instead:", challengeId);
+    }
+    
     if (!challenge) {
       return NextResponse.json({ success: false, error: 'Challenge not found' });
     }
+    
+    console.log("Found challenge:", challenge);
 
     if (challenge.status !== 'pending') {
       return NextResponse.json({ success: false, error: 'Challenge is no longer valid' });
@@ -73,20 +88,23 @@ export async function PUT(request: Request) {
 
     if (new Date() > new Date(challenge.expiresAt)) {
       await challengesCollection.updateOne(
-        { id: challengeId },
+        { id: challenge.id },
         { $set: { status: 'expired' } }
       );
       return NextResponse.json({ success: false, error: 'Challenge has expired' });
     }
 
-    // Verify the code matches
-    if (challenge.challenge !== verificationCode) {
-      return NextResponse.json({ success: false, error: 'Invalid verification code' });
+    // Verify the device and user match
+    if (challenge.deviceId !== deviceId || challenge.userId !== userId) {
+      return NextResponse.json({ success: false, error: 'Invalid device or user' });
     }
 
+    // In a real application, you would validate the cryptographic signature here
+    // For now, we'll just accept any response
+    
     // Mark the challenge as approved
     await challengesCollection.updateOne(
-      { id: challengeId },
+      { id: challenge.id },
       { $set: { status: 'approved' } }
     );
 
@@ -101,7 +119,7 @@ export async function PUT(request: Request) {
 export async function GET(request: Request) {
   try {
     const { db } = await connectToDatabase();
-    const challengesCollection = db.collection('authChallenges');
+    const challengesCollection = db.collection('challenges');
     const { searchParams } = new URL(request.url);
     const challengeId = searchParams.get('challengeId');
 

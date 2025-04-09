@@ -33,16 +33,37 @@ export default function DashboardPage() {
   
   // Redirect to auth page if not authenticated
   useEffect(() => {
+    console.log("Dashboard useEffect, auth state:", { 
+      isAuthenticated, 
+      deviceRegistrationRequired,
+      hasDevices: currentUser?.devices?.length > 0,
+      hasVerifiedDevices: currentUser?.devices?.some((d: {isVerified?: boolean}) => d.isVerified)
+    });
+    
     if (!isAuthenticated) {
+      console.log("Not authenticated, redirecting to auth");
       router.push('/auth');
       return;
     }
 
     if (deviceRegistrationRequired) {
+      // Before redirecting, double check if user actually has verified devices
+      const hasVerifiedDevices = currentUser?.devices?.some((d: {isVerified?: boolean}) => d.isVerified);
+      
+      if (hasVerifiedDevices) {
+        console.log("User has verified devices but deviceRegistrationRequired is true, fixing state");
+        // Fix the state to avoid redirect loop
+        useAuthStore.setState({
+          deviceRegistrationRequired: false
+        });
+        return; // Don't redirect, just update the state
+      }
+      
+      console.log("Device registration required, redirecting to setup-device");
       router.push('/setup-device');
       return;
     }
-  }, [isAuthenticated, deviceRegistrationRequired, router]);
+  }, [isAuthenticated, deviceRegistrationRequired, currentUser, router]);
   
   // Get unique categories from credentials
   const categories = Array.from(

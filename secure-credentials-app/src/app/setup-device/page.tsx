@@ -12,19 +12,36 @@ export default function SetupDevicePage() {
   useEffect(() => {
     // If not authenticated, redirect to login
     if (!isAuthenticated) {
+      console.log("Not authenticated, redirecting to auth");
       router.push('/auth');
       return;
     }
 
     // If device registration is not required, redirect to dashboard
     if (!deviceRegistrationRequired) {
+      console.log("Device registration not required, redirecting to dashboard");
       router.push('/dashboard');
       return;
     }
 
-    // If user already has 2FA enabled, redirect to dashboard
+    // If user already has 2FA enabled, check if they need device registration
     if (currentUser?.twoFactorEnabled) {
-      router.push('/dashboard');
+      console.log("User has 2FA enabled");
+      
+      // Check if any device is verified
+      const hasVerifiedDevices = currentUser.devices?.some((d: {isVerified?: boolean}) => d.isVerified);
+      console.log("Has verified devices:", hasVerifiedDevices);
+      
+      if (hasVerifiedDevices) {
+        console.log("User has verified devices, redirecting to dashboard");
+        
+        // Make sure deviceRegistrationRequired is set correctly
+        useAuthStore.setState({
+          deviceRegistrationRequired: false
+        });
+        
+        router.push('/dashboard');
+      }
     }
   }, [isAuthenticated, currentUser, deviceRegistrationRequired, router]);
 

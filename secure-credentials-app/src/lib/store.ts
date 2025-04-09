@@ -1,7 +1,7 @@
 import { create } from 'zustand';
 import { persist } from 'zustand/middleware';
 import { v4 as uuidv4 } from 'uuid';
-import type { Credential, CredentialFormData, User, UserFormData, PasswordResetData, Device, LoginResponse } from '@/types';
+import type { Credential, CredentialFormData, User, UserFormData, PasswordResetData, Device } from '@/types';
 
 interface AuthStore {
   users: User[];
@@ -152,6 +152,9 @@ export const useAuthStore = create<AuthStore>()(
             };
           }
           
+          // If user has verified devices, they shouldn't need to register a device again
+          const hasVerifiedDevices = result.user.devices?.some((d: {isVerified?: boolean}) => d.isVerified);
+          
           // If no 2FA, complete login immediately
           set({
             currentUser: result.user,
@@ -159,7 +162,9 @@ export const useAuthStore = create<AuthStore>()(
             twoFactorPending: false,
             pendingUserId: null,
             pendingDeviceId: null,
-            pendingChallengeId: null
+            pendingChallengeId: null,
+            // Only require device registration if the user has no verified devices
+            deviceRegistrationRequired: !hasVerifiedDevices
           });
           
           return { success: true };
@@ -283,20 +288,95 @@ export const useAuthStore = create<AuthStore>()(
       completeTwoFactorAuth: async (challengeId, code) => {
         set({ isLoading: true, error: null });
         try {
-          const response = await fetch('/api/users/reset-password', {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({
-              challengeId,
-              verificationCode: code,
-              newPassword: get().pendingPassword
-            })
-          });
+          // Determine whether this is for login or password reset
+          const pendingPassword = get().pendingPassword;
+          const isPasswordReset = !!pendingPassword;
+          
+          // Use the appropriate endpoint based on the operation
+          const endpoint = isPasswordReset ? '/api/users/reset-password' : '/api/users/complete-auth';
+          
+          console.log("completeTwoFactorAuth - endpoint:", endpoint);
+          console.log("completeTwoFactorAuth - challengeId:", challengeId);
+          console.log("completeTwoFactorAuth - verificationCode:", code);
+          console.log("completeTwoFactorAuth - isPasswordReset:", isPasswordReset);
+          
+          // Improved error handling for fetch
+          let response;
+          try {
+            // For login, we don't actually need to send the verification code
+            // The server will check if the challenge is approved based on the mobile app action
+            const requestBody = isPasswordReset 
+              ? {
+                  challengeId,
+                  verificationCode: code,
+                  newPassword: pendingPassword
+                } 
+              : {
+                  challengeId,
+                  // Only include verificationCode if not a special value
+                  ...(code !== "approved" && { verificationCode: code })
+                };
+            
+            console.log("completeTwoFactorAuth - request payload:", JSON.stringify(requestBody));
+            
+            response = await fetch(endpoint, {
+              method: 'POST',
+              headers: { 'Content-Type': 'application/json' },
+              body: JSON.stringify(requestBody)
+            });
+          } catch (fetchError) {
+            console.error('Network error during verification:', fetchError);
+            return { success: false, error: 'Network error during verification' };
+          }
+          
+          console.log("completeTwoFactorAuth - response status:", response.status, response.statusText);
+          
+          // Check if the response is valid before parsing
+          if (!response.ok) {
+            const responseText = await response.text();
+            console.error('Server error details:', {
+              status: response.status,
+              statusText: response.statusText,
+              responseText
+            });
+            return { success: false, error: `Server error: ${response.status} ${response.statusText}` };
+          }
 
-          const result = await response.json();
+          // Check content type to ensure we're getting JSON
+          const contentType = response.headers.get('content-type');
+          if (!contentType || !contentType.includes('application/json')) {
+            console.error('Invalid response format. Expected JSON, got:', contentType);
+            return { success: false, error: 'Invalid response format from server' };
+          }
+
+          // Now parse the JSON with better error handling
+          let result;
+          try {
+            result = await response.json();
+            console.log("completeTwoFactorAuth - response data:", JSON.stringify(result));
+          } catch (jsonError) {
+            console.error('JSON parsing error:', jsonError);
+            return { success: false, error: 'Failed to parse server response' };
+          }
           
           if (!result.success) {
+            console.error("Server returned error:", result.error);
             return { success: false, error: result.error };
+          }
+
+          // If login was successful, update the user state
+          if (!isPasswordReset && result.user) {
+            console.log("Login successful, updating user state");
+            
+            // Check if the user has any verified devices
+            const hasVerifiedDevices = result.user.devices?.some((d: {isVerified?: boolean}) => d.isVerified);
+            
+            set({
+              currentUser: result.user,
+              isAuthenticated: true,
+              // Only require device registration if the user has no verified devices
+              deviceRegistrationRequired: !hasVerifiedDevices
+            });
           }
 
           // Clear the pending state
