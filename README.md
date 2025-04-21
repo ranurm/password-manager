@@ -23,16 +23,50 @@ This password manager implements multiple layers of security including:
 
 ## Getting Started
 
-Each application has its own README with specific instructions for setup and development:
-- [Web Application Setup](/secure-credentials-app/README.md)
-- [Mobile Application Setup](/mobilephone_2F_login_app/README.md)
+### Web Application Setup (Next.js)
+
+1. Navigate to the web application directory:
+   ```bash
+   cd secure-credentials-app
+   ```
+
+2. Install dependencies:
+   ```bash
+   npm install
+   ```
+
+3. Run the development server:
+   ```bash
+   npm run dev
+   ```
+
+4. Open [http://localhost:3000](http://localhost:3000) in your browser to view the application.
+
+### Mobile Application Setup (React Native)
+
+1. Navigate to the mobile application directory:
+   ```bash
+   cd mobilephone_2F_login_app
+   ```
+
+2. Install dependencies:
+   ```bash
+   npm install
+   ```
+
+3. Start the Expo development server:
+   ```bash
+   npx expo start
+   ```
+
+4. To run the application:
+   - Scan the QR code with the Expo Go app on your device
+   - The device needs to be connected to the same network
+
+
 
 ## Authors
 
 - Veeti Salminen
 - Antti Santala
 - Rami Nurmoranta
-
-## License
-
-This project is created for educational purposes as part of a university secure programming course.
