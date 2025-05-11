@@ -71,7 +71,7 @@ export default function AuthScreen() {
 
       if (result.success) {
         await AsyncStorage.setItem('deviceId', result.deviceId || '');
-        await AsyncStorage.setItem('userId', result.user.id || '');
+        await AsyncStorage.setItem('userId', result.user?.id || '');
         await AsyncStorage.setItem('deviceName', deviceName);
         setIsRegistered(true);
         Alert.alert('Success', 'Device registered successfully!');
