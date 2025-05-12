@@ -36,7 +36,7 @@ export default function DashboardPage() {
     console.log("Dashboard useEffect, auth state:", { 
       isAuthenticated, 
       deviceRegistrationRequired,
-      hasDevices: currentUser?.devices?.length > 0,
+      hasDevices: currentUser?.devices && currentUser.devices.length > 0,
       hasVerifiedDevices: currentUser?.devices?.some((d: {isVerified?: boolean}) => d.isVerified)
     });
     

@@ -534,28 +534,22 @@ export const useAuthStore = create<AuthStore>()(
         if (!currentUser) return;
         
         try {
-          const response = await fetch('/api/users/add-credential', {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({
-              userId: currentUser.id,
-              credential: data
-            })
-          });
+          // Create a new credential
+          const newCredential = {
+            id: uuidv4(),
+            ...data,
+            favorite: data.favorite || false,
+            createdAt: new Date().toISOString(),
+            updatedAt: new Date().toISOString()
+          };
           
-          const result = await response.json();
-          
-          if (!result.success) {
-            console.error('Add credential error:', result.error);
-            return;
-          }
-          
+          // Update the state directly without API call
           set((state) => {
             if (!state.currentUser) return state;
             
             const updatedUser = {
               ...state.currentUser,
-              credentials: [...state.currentUser.credentials, result.credential],
+              credentials: [...state.currentUser.credentials, newCredential],
               updatedAt: new Date().toISOString()
             };
             
@@ -573,23 +567,14 @@ export const useAuthStore = create<AuthStore>()(
         if (!currentUser) return;
         
         try {
-          const response = await fetch('/api/users/update-credential', {
-            method: 'PUT',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({
-              userId: currentUser.id,
-              credentialId: id,
-              data
-            })
-          });
-          
-          const result = await response.json();
-          
-          if (!result.success) {
-            console.error('Update credential error:', result.error);
+          // Find the credential in the user's credentials
+          const credential = currentUser.credentials.find(c => c.id === id);
+          if (!credential) {
+            console.error('Credential not found');
             return;
           }
           
+          // Update the state directly without API call
           set((state) => {
             if (!state.currentUser) return state;
             
@@ -615,22 +600,14 @@ export const useAuthStore = create<AuthStore>()(
         if (!currentUser) return;
         
         try {
-          const response = await fetch('/api/users/delete-credential', {
-            method: 'DELETE',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({
-              userId: currentUser.id,
-              credentialId: id
-            })
-          });
-          
-          const result = await response.json();
-          
-          if (!result.success) {
-            console.error('Delete credential error:', result.error);
+          // Find the credential in the user's credentials
+          const credential = currentUser.credentials.find(c => c.id === id);
+          if (!credential) {
+            console.error('Credential not found');
             return;
           }
           
+          // Update the state directly without API call
           set((state) => {
             if (!state.currentUser) return state;
             
@@ -654,22 +631,14 @@ export const useAuthStore = create<AuthStore>()(
         if (!currentUser) return;
         
         try {
-          const response = await fetch('/api/users/toggle-favorite', {
-            method: 'PUT',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({
-              userId: currentUser.id,
-              credentialId: id
-            })
-          });
-          
-          const result = await response.json();
-          
-          if (!result.success) {
-            console.error('Toggle favorite error:', result.error);
+          // Find the credential in the user's credentials
+          const credential = currentUser.credentials.find(c => c.id === id);
+          if (!credential) {
+            console.error('Credential not found');
             return;
           }
           
+          // Update the state directly without API call
           set((state) => {
             if (!state.currentUser) return state;
             

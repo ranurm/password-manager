@@ -1,10 +1,11 @@
 export interface Credential {
   id: string;
-  name: string;
+  title: string;
   username: string;
   password: string;
   url?: string;
   notes?: string;
+  category?: string;
   favorite: boolean;
   createdAt: string;
   updatedAt: string;
